@@ -107,7 +107,7 @@ class _ShowsPanelState extends State<ShowsPanel> {
           : _error != null
           ? ErrorBox(message: _error!, onRetry: _load)
           : Card(
-              child: SingleChildScrollView(
+              child: ResponsiveTableScroll(
                 child: DataTable(
                   columns: const [
                     DataColumn(label: Text('Title')),

@@ -1,5 +1,14 @@
+﻿-- =====================================================================
+-- Retro TV - COMBINED_MIGRATION.sql (regenerated from migrations 001-007)
 -- =====================================================================
--- Retro TV — Migration 001: Initial Schema
+
+
+-- =====================================================================
+-- FILE: 001_initial_schema.sql
+-- =====================================================================
+
+-- =====================================================================
+-- Retro TV â€” Migration 001: Initial Schema
 -- =====================================================================
 -- NOTE: This project's Supabase database previously contained unrelated
 -- demo tables (`cartoons`, `episodes`) from an earlier template that do
@@ -47,7 +56,7 @@ create trigger trg_profiles_updated_at
   for each row execute function public.set_updated_at();
 
 -- ---------------------------------------------------------------------
--- tv_styles — multiple selectable retro TV skins/themes
+-- tv_styles â€” multiple selectable retro TV skins/themes
 -- ---------------------------------------------------------------------
 create table public.tv_styles (
   id uuid primary key default gen_random_uuid(),
@@ -112,7 +121,7 @@ create table public.channels (
 );
 
 comment on table public.channels is 'TV channels. default_episode_id points to episodes(id) and is added as an FK after episodes table exists to avoid a circular FK definition.';
-comment on column public.channels.is_kids_friendly is 'Admin-controlled classification flag — content is NOT assumed child-appropriate merely by category.';
+comment on column public.channels.is_kids_friendly is 'Admin-controlled classification flag â€” content is NOT assumed child-appropriate merely by category.';
 
 create trigger trg_channels_updated_at
   before update on public.channels
@@ -272,8 +281,13 @@ create table public.admin_activity (
 );
 
 comment on table public.admin_activity is 'Tracks last-seen/last-action per admin user for the dashboard "activity" widget.';
+
 -- =====================================================================
--- Retro TV — Migration 002: Row Level Security Policies
+-- FILE: 002_rls_policies.sql
+-- =====================================================================
+
+-- =====================================================================
+-- Retro TV â€” Migration 002: Row Level Security Policies
 -- =====================================================================
 -- Security model:
 --   * Every table has RLS ENABLED. Nothing is left open by default.
@@ -282,7 +296,7 @@ comment on table public.admin_activity is 'Tracks last-seen/last-action per admi
 --   * All INSERT/UPDATE/DELETE on content tables require the requesting
 --     user to be an authenticated admin (super_admin/admin/editor per
 --     the permission matrix below), verified via the is_admin()/has_role()
---     SECURITY DEFINER functions — NEVER via frontend checks.
+--     SECURITY DEFINER functions â€” NEVER via frontend checks.
 --   * profiles.role can only be changed by a super_admin (prevents users
 --     escalating their own privileges through normal client requests).
 --   * audit_logs is insert-only for admins; nobody can update/delete rows.
@@ -343,7 +357,7 @@ create policy profiles_update_super_admin
   with check (public.is_super_admin());
 
 -- Profile rows are created automatically by the handle_new_user trigger
--- (SECURITY DEFINER) — no direct insert policy is granted to clients.
+-- (SECURITY DEFINER) â€” no direct insert policy is granted to clients.
 -- Only super_admin may delete a profile (deactivating admin accounts).
 create policy profiles_delete_super_admin
   on public.profiles for delete
@@ -613,7 +627,7 @@ create policy audit_admin_insert
   to authenticated
   with check (public.is_admin() and (user_id = auth.uid() or user_id is null));
 
--- Intentionally NO update or delete policy on audit_logs — logs are immutable.
+-- Intentionally NO update or delete policy on audit_logs â€” logs are immutable.
 
 -- ---------------------------------------------------------------------
 -- admin_activity policies
@@ -633,8 +647,13 @@ create policy admin_activity_update_own
   to authenticated
   using (user_id = auth.uid() and public.is_admin())
   with check (user_id = auth.uid() and public.is_admin());
+
 -- =====================================================================
--- Retro TV — Migration 003: Indexes
+-- FILE: 003_indexes.sql
+-- =====================================================================
+
+-- =====================================================================
+-- Retro TV â€” Migration 003: Indexes
 -- =====================================================================
 
 create index idx_channels_enabled on public.channels(enabled);
@@ -677,13 +696,18 @@ create index idx_audit_logs_entity on public.audit_logs(entity_type, entity_id);
 create index idx_audit_logs_created_at on public.audit_logs(created_at desc);
 
 create index idx_site_settings_key on public.site_settings(key);
+
 -- =====================================================================
--- Retro TV — Migration 004: Functions & Triggers
+-- FILE: 004_functions.sql
+-- =====================================================================
+
+-- =====================================================================
+-- Retro TV â€” Migration 004: Functions & Triggers
 -- =====================================================================
 -- IMPORTANT: All authorization functions below are SECURITY DEFINER and
 -- read only from public.profiles using auth.uid(). They are the ONLY
 -- source of truth for admin authorization. Never hardcode admin emails
--- anywhere in application code — roles live exclusively in the database.
+-- anywhere in application code â€” roles live exclusively in the database.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -709,7 +733,7 @@ $$;
 comment on function public.has_role(text[]) is 'Core role-check primitive. SECURITY DEFINER so it can read profiles regardless of RLS on profiles itself.';
 
 -- ---------------------------------------------------------------------
--- is_super_admin() — full access
+-- is_super_admin() â€” full access
 -- ---------------------------------------------------------------------
 create or replace function public.is_super_admin()
 returns boolean
@@ -722,7 +746,7 @@ as $$
 $$;
 
 -- ---------------------------------------------------------------------
--- is_admin() — super_admin or admin (channels, shows, episodes, schedules, tv styles, settings)
+-- is_admin() â€” super_admin or admin (channels, shows, episodes, schedules, tv styles, settings)
 -- ---------------------------------------------------------------------
 create or replace function public.is_admin()
 returns boolean
@@ -737,7 +761,7 @@ $$;
 comment on function public.is_admin() is 'True for super_admin and admin roles. Used to gate management of channels/shows/episodes/schedules/tv_styles/settings/users(read)/audit_logs.';
 
 -- ---------------------------------------------------------------------
--- is_content_manager() — super_admin, admin, or editor (shows/episodes only)
+-- is_content_manager() â€” super_admin, admin, or editor (shows/episodes only)
 -- ---------------------------------------------------------------------
 create or replace function public.is_content_manager()
 returns boolean
@@ -752,7 +776,7 @@ $$;
 comment on function public.is_content_manager() is 'True for super_admin, admin, and editor. Editors are restricted to shows/episodes content only (never channels/users/settings) via which tables grant this check.';
 
 -- ---------------------------------------------------------------------
--- handle_new_user() — auto-create a profile row when a new auth user signs up.
+-- handle_new_user() â€” auto-create a profile row when a new auth user signs up.
 -- New users default to role=''viewer'' (NOT admin). Admin roles must be
 -- granted explicitly via the secure admin-setup process (see ADMIN_SETUP.md).
 -- ---------------------------------------------------------------------
@@ -782,7 +806,7 @@ create trigger on_auth_user_created
   for each row execute function public.handle_new_user();
 
 -- ---------------------------------------------------------------------
--- promote_user_to_role() — callable ONLY by a super_admin (enforced inside).
+-- promote_user_to_role() â€” callable ONLY by a super_admin (enforced inside).
 -- Lets a super_admin safely change another user's role without giving
 -- blanket UPDATE rights on profiles from the client.
 -- ---------------------------------------------------------------------
@@ -811,7 +835,7 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------
--- normalize_youtube_id(input text) — extracts an 11-char-ish YouTube
+-- normalize_youtube_id(input text) â€” extracts an 11-char-ish YouTube
 -- video ID from any of the accepted URL formats, or returns the input
 -- unchanged if it already looks like a bare video ID.
 -- Used as a defensive server-side check; the Flutter app performs the
@@ -951,8 +975,13 @@ begin
   return v_id;
 end;
 $$;
+
 -- =====================================================================
--- Retro TV — Migration 005: Seed Data
+-- FILE: 005_seed_data.sql
+-- =====================================================================
+
+-- =====================================================================
+-- Retro TV â€” Migration 005: Seed Data
 -- =====================================================================
 -- All YouTube IDs below are Blender Foundation open movies, released
 -- under Creative Commons (CC-BY) and officially published on YouTube by
@@ -975,7 +1004,7 @@ insert into public.categories (id, name, slug, description, enabled, sort_order)
   ('a0000000-0000-0000-0000-000000000008','Music','music','Music programming',true,8);
 
 -- ---------------------------------------------------------------------
--- TV Styles — multiple selectable retro TV skins (colorful + classic)
+-- TV Styles â€” multiple selectable retro TV skins (colorful + classic)
 -- ---------------------------------------------------------------------
 insert into public.tv_styles (id, name, slug, description, era, theme_config, screen_aspect_ratio, default_volume, enabled, sort_order) values
 (
@@ -1082,9 +1111,9 @@ insert into public.shows (id, title, slug, description, category_id, channel_id,
 -- clearly-labeled sample/demo content)
 -- ---------------------------------------------------------------------
 insert into public.episodes (id, show_id, channel_id, season_number, episode_number, title, description, youtube_video_id, thumbnail_url, duration_seconds, release_year, status, enabled, sort_order) values
-('e0000000-0000-0000-0000-000000000001','d0000000-0000-0000-0000-000000000001','c0000000-0000-0000-0000-000000000001',1,1,'Big Buck Bunny (Sample)','Sample demo episode — Creative Commons open movie by Blender Foundation.','aqz-KE-bpKQ','https://img.youtube.com/vi/aqz-KE-bpKQ/hqdefault.jpg',596,2008,'published',true,1),
-('e0000000-0000-0000-0000-000000000002','d0000000-0000-0000-0000-000000000002','c0000000-0000-0000-0000-000000000003',1,1,'Sintel (Sample)','Sample demo episode — Creative Commons open movie by Blender Foundation.','eRsGyueVLvQ','https://img.youtube.com/vi/eRsGyueVLvQ/hqdefault.jpg',888,2010,'published',true,1),
-('e0000000-0000-0000-0000-000000000003','d0000000-0000-0000-0000-000000000003','c0000000-0000-0000-0000-000000000004',1,1,'Tears of Steel (Sample)','Sample demo episode — Creative Commons open movie by Blender Foundation.','R6MlUcmOul8','https://img.youtube.com/vi/R6MlUcmOul8/hqdefault.jpg',734,2012,'published',true,1),
+('e0000000-0000-0000-0000-000000000001','d0000000-0000-0000-0000-000000000001','c0000000-0000-0000-0000-000000000001',1,1,'Big Buck Bunny (Sample)','Sample demo episode â€” Creative Commons open movie by Blender Foundation.','aqz-KE-bpKQ','https://img.youtube.com/vi/aqz-KE-bpKQ/hqdefault.jpg',596,2008,'published',true,1),
+('e0000000-0000-0000-0000-000000000002','d0000000-0000-0000-0000-000000000002','c0000000-0000-0000-0000-000000000003',1,1,'Sintel (Sample)','Sample demo episode â€” Creative Commons open movie by Blender Foundation.','eRsGyueVLvQ','https://img.youtube.com/vi/eRsGyueVLvQ/hqdefault.jpg',888,2010,'published',true,1),
+('e0000000-0000-0000-0000-000000000003','d0000000-0000-0000-0000-000000000003','c0000000-0000-0000-0000-000000000004',1,1,'Tears of Steel (Sample)','Sample demo episode â€” Creative Commons open movie by Blender Foundation.','R6MlUcmOul8','https://img.youtube.com/vi/R6MlUcmOul8/hqdefault.jpg',734,2012,'published',true,1),
 ('e0000000-0000-0000-0000-000000000004','d0000000-0000-0000-0000-000000000001','c0000000-0000-0000-0000-000000000002',1,2,'Big Buck Bunny Encore (Sample)','Sample demo episode replay for Kids Classics channel.','aqz-KE-bpKQ','https://img.youtube.com/vi/aqz-KE-bpKQ/hqdefault.jpg',596,2008,'published',true,2);
 
 -- Set channel default episodes now that episodes exist
@@ -1097,7 +1126,7 @@ update public.channels set default_episode_id = 'e0000000-0000-0000-0000-0000000
 -- Site Settings
 -- ---------------------------------------------------------------------
 insert into public.site_settings (key, value, is_public) values
-('site_title', '"Retro TV — Watch Classic Television"', true),
+('site_title', '"Retro TV â€” Watch Classic Television"', true),
 ('site_description', '"A nostalgic virtual television experience. Turn it on and tune in."', true),
 ('heavy_effects_enabled_default', 'true', true),
 ('max_volume', '100', true),
@@ -1110,8 +1139,13 @@ insert into public.featured_content (content_type, content_id, sort_order, enabl
 ('channel', 'c0000000-0000-0000-0000-000000000001', 1, true),
 ('channel', 'c0000000-0000-0000-0000-000000000002', 2, true),
 ('tv_style', 'b0000000-0000-0000-0000-000000000007', 1, true);
+
 -- =====================================================================
--- Retro TV — Migration 006: Storage Buckets & Policies
+-- FILE: 006_storage_buckets.sql
+-- =====================================================================
+
+-- =====================================================================
+-- Retro TV â€” Migration 006: Storage Buckets & Policies
 -- =====================================================================
 -- Creates public-read storage buckets for TV style previews, channel
 -- logos/banners, show posters/banners, and episode thumbnails. Only
@@ -1161,3 +1195,1180 @@ create policy storage_admin_delete
     bucket_id in ('tv-styles','channel-logos','channel-banners','show-posters','show-banners','thumbnails')
     and public.is_admin()
   );
+
+-- =====================================================================
+-- FILE: 007_scheduling_playlist_and_validation.sql
+-- =====================================================================
+
+-- =====================================================================
+-- Retro TV â€” Migration 007: Scheduling integrity, playlist import,
+-- timezone strategy & validation
+-- =====================================================================
+-- This migration is SAFE for production databases: it only ADDS columns,
+-- indexes and triggers. It never drops or resets existing data.
+--
+-- TIMEZONE STRATEGY (applies to the whole scheduling flow):
+--   * All schedule timestamps are stored as timestamptz (UTC) in Postgres.
+--   * The "scheduling timezone" is an IANA name stored in site_settings
+--     under the key 'scheduling_timezone' (default 'UTC').
+--   * Admin DATE+TIME input is interpreted as WALL-CLOCK time in the
+--     scheduling timezone, then converted to UTC before being INSERTED.
+--   * The user/player side compares against UTC only (no local conversion).
+--   * Admin UI displays timestamps back in the SAME scheduling timezone.
+--   This single, consistent strategy eliminates the "aired a day early /
+--   a day late" class of bugs caused by mixing device-local and server
+--   naive timestamps.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- helpers (must exist before functions that use them)
+-- ---------------------------------------------------------------------
+create or replace function public.youtube_thumb(p_video_id text)
+returns text
+language sql
+immutable
+as $$
+  select 'https://img.youtube.com/vi/' || p_video_id || '/hqdefault.jpg';
+$$;
+
+-- ---------------------------------------------------------------------
+-- episodes: add YouTube playlist import metadata
+-- ---------------------------------------------------------------------
+alter table public.episodes
+  add column if not exists youtube_playlist_id text;
+
+alter table public.episodes
+  add column if not exists playlist_position integer
+    check (playlist_position is null or playlist_position >= 1);
+
+comment on column public.episodes.youtube_playlist_id is 'Source YouTube playlist id when the episode was imported from a playlist (NULL for manually added videos).';
+comment on column public.episodes.playlist_position is '1-based position of the video inside its source YouTube playlist, preserved on import.';
+
+-- Deduplication: the SAME video (youtube_video_id) may appear once per
+-- playlist. Re-importing a playlist must not create duplicate rows; a
+-- video that legitimately exists in two different playlists is still
+-- allowed (playlist_id participates in the key).
+create unique index if not exists uq_episodes_playlist_video
+  on public.episodes (youtube_playlist_id, youtube_video_id)
+  where youtube_playlist_id is not null;
+
+-- Efficient ordered playback lookups per playlist.
+create index if not exists idx_episodes_playlist_position
+  on public.episodes (youtube_playlist_id, playlist_position);
+
+-- ---------------------------------------------------------------------
+-- episodes: server-side validation trigger
+-- ---------------------------------------------------------------------
+-- Authoritative server-side validation that always runs regardless of
+-- which client wrote the row. Mirrors the client-side checks so no
+-- invalid or incomplete record can ever be stored.
+-- =====================================================================
+create or replace function public.validate_episode()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.title is null or length(trim(new.title)) = 0 then
+    raise exception 'Episode title is required';
+  end if;
+
+  if new.youtube_video_id is null or length(trim(new.youtube_video_id)) = 0 then
+    raise exception 'A valid YouTube video ID is required';
+  end if;
+  if public.normalize_youtube_id(new.youtube_video_id) is null then
+    raise exception 'Invalid YouTube video ID "%"', new.youtube_video_id;
+  end if;
+
+  if new.youtube_playlist_id is not null
+     and new.youtube_playlist_id !~ '^[A-Za-z0-9_-]{10,}$' then
+    raise exception 'Invalid YouTube playlist ID "%"', new.youtube_playlist_id;
+  end if;
+
+  if new.playlist_position is not null and new.youtube_playlist_id is null then
+    raise exception 'playlist_position requires a youtube_playlist_id';
+  end if;
+
+  -- Keep the lifecycle dates honest
+  if new.status = 'published'
+     and (old.status is distinct from 'published' or new.published_at is null) then
+    new.published_at := coalesce(new.published_at, new.updated_at, now());
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_episodes_validate on public.episodes;
+create trigger trg_episodes_validate
+  before insert or update on public.episodes
+  for each row execute function public.validate_episode();
+
+-- ---------------------------------------------------------------------
+-- channel_schedule: duplicate + past-date protection
+-- ---------------------------------------------------------------------
+-- Prevent two identical one-off slots for the same episode on the same
+-- channel. (Recurring day_of_week templates are excluded from this key
+-- deliberately â€” an episode may air on multiple weekdays.)
+create unique index if not exists uq_schedule_channel_episode_start
+  on public.channel_schedule (channel_id, episode_id, start_time)
+  where enabled = true and day_of_week is null;
+
+-- Fast "currently scheduled / reserved upcoming" lookups.
+create index if not exists idx_schedule_onedate_upcoming
+  on public.channel_schedule (channel_id, start_time)
+  where day_of_week is null;
+
+-- =====================================================================
+-- Past-time rule:
+--   * One-off dated slots (day_of_week IS NULL) must NOT start in the
+--     past. This app does not support historical/back-dated scheduling.
+--   * Recurring weekly templates keep a canonical UTC weekday anchor
+--     (only the UTC time-of-day and weekday matter for matching), so an
+--     update never blocks just because an anchor date is in the past.
+-- =====================================================================
+create or replace function public.validate_schedule_entry()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.day_of_week is null then
+    -- One-off dated slot: must be in the future. (Updates that leave the
+    -- slot's own start_time untouched are allowed so admins can still
+    -- edit notes/enabled on an already-aired entry without triggering a
+    -- "past date" rejection.)
+    if (old.start_time is null or new.start_time <> old.start_time)
+       and new.start_time <= now() then
+      raise exception 'The selected date and time has already passed. Choose a future date and time.';
+    end if;
+  else
+    -- Recurring weekly template: normalise to a canonical UTC weekday
+    -- anchor so `extract(dow from start_time)` matches day_of_week under
+    -- the UTC session timezone used by get_current_program().
+    new.start_time := (
+      date_trunc('week', now() at time zone 'UTC')
+      + new.day_of_week * interval '1 day'
+      + (new.start_time at time zone 'UTC')::time
+    ) at time zone 'UTC';
+    if new.end_time is not null then
+      new.end_time := (
+        date_trunc('week', now() at time zone 'UTC')
+        + new.day_of_week * interval '1 day'
+        + (new.end_time at time zone 'UTC')::time
+      ) at time zone 'UTC';
+    end if;
+    if new.end_time is not null and new.end_time <= new.start_time then
+      raise exception 'End time must be after the start time';
+    end if;
+  end if;
+
+  if new.end_time is not null and new.end_time <= new.start_time then
+    raise exception 'End time must be after the start time';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_schedule_validate on public.channel_schedule;
+create trigger trg_schedule_validate
+  before insert or update on public.channel_schedule
+  for each row execute function public.validate_schedule_entry();
+
+-- ---------------------------------------------------------------------
+-- channel program queue (used by the player & "Up Next")
+-- ---------------------------------------------------------------------
+-- Returns ONLY the episodes that are currently ELIGIBLE for a channel,
+-- in canonical playback order:
+--   sort_order -> playlist position -> episode number -> created_at.
+--
+-- Eligibility rule: an episode is playable right now unless it is
+-- "reserved" by a future one-off schedule entry (start_time not reached
+-- yet). Reserved episodes are EXCLUDED so they can never play early. The
+-- moment their scheduled start time arrives the reservation disappears
+-- and they automatically join the continuous loop â€” no manual activation
+-- needed by admin or player.
+--
+-- Comparisons are pure UTC (timestamptz), matching the storage strategy.
+-- =====================================================================
+create or replace function public.get_channel_program_queue(
+  p_channel_id uuid,
+  p_at timestamptz default now(),
+  p_limit integer default 500
+)
+returns table (
+  id uuid,
+  title text,
+  description text,
+  youtube_video_id text,
+  youtube_url text,
+  thumbnail_url text,
+  duration_seconds integer,
+  episode_number integer,
+  season_number integer,
+  sort_order integer,
+  youtube_playlist_id text,
+  playlist_position integer,
+  channel_id uuid,
+  show_id uuid,
+  status text,
+  enabled boolean,
+  air_date timestamptz,
+  category_id uuid
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    e.id, e.title, e.description, e.youtube_video_id, e.youtube_url,
+    e.thumbnail_url, e.duration_seconds, e.episode_number, e.season_number,
+    e.sort_order, e.youtube_playlist_id, e.playlist_position,
+    e.channel_id, e.show_id, e.status, e.enabled, e.air_date, e.category_id
+  from public.episodes e
+  where e.channel_id = p_channel_id
+    and e.enabled = true
+    and e.status = 'published'
+    and not exists (
+      select 1
+      from public.channel_schedule cs
+      where cs.channel_id = p_channel_id
+        and cs.episode_id = e.id
+        and cs.enabled = true
+        and cs.day_of_week is null
+        and cs.start_time > p_at
+    )
+  order by
+    e.sort_order asc,
+    e.playlist_position asc nulls last,
+    e.episode_number asc nulls last,
+    e.created_at asc
+  limit greatest(1, p_limit);
+$$;
+
+comment on function public.get_channel_program_queue(uuid, timestamptz, integer) is 'Eligible episodes for a channel in canonical playback order. Episodes reserved by a future one-off schedule slot are excluded so they never play early; they automatically join the queue when their scheduled start time arrives. SECURITY DEFINER â€” only public-safe fields are returned (no secrets).';
+
+-- ---------------------------------------------------------------------
+-- next scheduled showtime for an episode (used by the "Up Next" card)
+-- ---------------------------------------------------------------------
+create or replace function public.get_next_schedule(
+  p_channel_id uuid,
+  p_episode_id uuid,
+  p_at timestamptz default now()
+)
+returns table (
+  schedule_id uuid,
+  start_time timestamptz,
+  end_time timestamptz,
+  day_of_week integer
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  -- One-off dated slots must be strictly in the future; recurring weekly
+  -- templates are rolled forward week-by-week from their (canonical UTC)
+  -- anchor so even a stale anchor predicts the next real occurrence.
+  with cand as (
+    select
+      cs.id,
+      cs.day_of_week,
+      (case
+        when cs.day_of_week is null then cs.start_time
+        when cs.start_time > p_at then cs.start_time
+        else cs.start_time
+          + interval '7 days' * (floor(extract(epoch from (p_at - cs.start_time)) / 604800.0) + 1)
+      end)::timestamptz as occurrence,
+      (case when cs.end_time is null then interval '0' else (cs.end_time::time - cs.start_time::time) end) as dur
+    from public.channel_schedule cs
+    where cs.channel_id = p_channel_id
+      and cs.episode_id = p_episode_id
+      and cs.enabled = true
+      and (
+        (cs.day_of_week is null and cs.start_time > p_at)
+        or cs.day_of_week is not null
+      )
+  )
+  select c.id, c.occurrence, c.occurrence + c.dur, c.day_of_week
+  from cand c
+  order by c.occurrence asc
+  limit 1;
+$$;
+
+-- ---------------------------------------------------------------------
+-- soonest upcoming scheduled program for a channel ("announcement" card)
+-- Handles BOTH one-off dated slots (must be strictly future) and weekly
+-- recurring templates, which are rolled forward week-by-week from their
+-- canonical UTC anchor so a stale anchor still predicts the real next
+-- occurrence. Pure UTC comparisons end to end.
+-- =====================================================================
+create or replace function public.get_next_scheduled_program(
+  p_channel_id uuid,
+  p_at timestamptz default now()
+)
+returns table (
+  episode_id uuid,
+  title text,
+  thumbnail_url text,
+  youtube_video_id text,
+  channel_number integer,
+  channel_name text,
+  start_time timestamptz,
+  end_time timestamptz,
+  day_of_week integer,
+  recurring boolean
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  -- "Next program" means the soonest FUTURE occurrence: one-off dated slots
+  -- must be strictly ahead of p_at, and recurring weekly templates are rolled
+  -- forward from their canonical UTC anchor (so stale anchors from legacy
+  -- data still predict correctly).
+  with cand as (
+    select
+      cs.id,
+      e.id as episode_id,
+      e.title,
+      e.thumbnail_url,
+      e.youtube_video_id,
+      ch.channel_number,
+      ch.name as channel_name,
+      cs.day_of_week,
+      (case
+        when cs.day_of_week is null then cs.start_time
+        when cs.start_time > p_at then cs.start_time
+        else cs.start_time
+          + interval '7 days' * (floor(extract(epoch from (p_at - cs.start_time)) / 604800.0) + 1)
+      end)::timestamptz as occurrence,
+      (case when cs.end_time is null then interval '0' else (cs.end_time::time - cs.start_time::time) end) as dur
+    from public.channel_schedule cs
+    join public.episodes e on e.id = cs.episode_id
+    join public.channels ch on ch.id = cs.channel_id
+    where cs.channel_id = p_channel_id
+      and cs.enabled = true
+      and (
+        (cs.day_of_week is null and cs.start_time > p_at)
+        or cs.day_of_week is not null
+      )
+  )
+  select c.episode_id, c.title, c.thumbnail_url, c.youtube_video_id,
+         c.channel_number, c.channel_name,
+         c.occurrence, c.occurrence + c.dur, c.day_of_week,
+         (c.day_of_week is not null)
+  from cand c
+  order by c.occurrence asc
+  limit 1;
+$$;
+
+comment on function public.get_next_scheduled_program(uuid, timestamptz) is 'Soonest upcoming scheduled program for a channel (one-off or next weekly recurrence), returned together with episode + channel display info for the "Up Next / announcement" card. SECURITY DEFINER.';
+
+-- ---------------------------------------------------------------------
+-- reorder_episodes(channel_id, ordered episode ids)
+-- Rewrites sort_order of a channel's episodes to match the given order
+-- (1..N). sort_order drives canonical playback ordering. Admin-only.
+-- =====================================================================
+create or replace function public.reorder_episodes(
+  p_channel_id uuid,
+  p_episode_ids uuid[]
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  i integer;
+begin
+  if not public.is_admin() then
+    raise exception 'Unauthorized. Admin access is required to reorder episodes.';
+  end if;
+
+  if p_episode_ids is null or array_length(p_episode_ids, 1) = 0 then
+    raise exception 'No episodes provided';
+  end if;
+
+  for i in 1 .. array_length(p_episode_ids, 1)
+  loop
+    update public.episodes
+    set sort_order = i
+    where id = p_episode_ids[i] and channel_id = p_channel_id;
+  end loop;
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- playlist import (server-side, content-manager only)
+-- ---------------------------------------------------------------------
+-- Accepts the items fetched from a playlist (via the Edge Function using
+-- the YouTube Data API, or the keyless RSS fallback) and upserts them
+-- into episodes, deduplicating on (youtube_playlist_id, youtube_video_id).
+-- Also flips a channel's default episode to the first imported video when
+-- the channel had none, so an imported playlist is immediately watchable.
+-- =====================================================================
+create or replace function public.import_playlist_videos(
+  p_channel_id uuid,
+  p_playlist_id text,
+  p_items jsonb,
+  p_default_show_id uuid default null
+)
+returns table (episode_id uuid, youtube_video_id text, title text, inserted boolean, error text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  item jsonb;
+  v_title text;
+  v_video_id text;
+  v_thumb text;
+  v_desc text;
+  v_pos integer;
+  v_id uuid;
+  v_inserted boolean;
+  v_first_id uuid := null;
+begin
+  -- Authorize: content managers only (this is the sanctioned import path).
+  if not public.is_content_manager() then
+    raise exception 'Unauthorized. Admin access is required to import playlists.';
+  end if;
+
+  if not exists (select 1 from public.channels where id = p_channel_id) then
+    raise exception 'Selected channel no longer exists. Please pick another channel.';
+  end if;
+
+  if p_playlist_id is null or p_playlist_id !~ '^[A-Za-z0-9_-]{10,}$' then
+    raise exception 'Invalid YouTube playlist ID "%"', p_playlist_id;
+  end if;
+
+  for item in select * from jsonb_array_elements(p_items)
+  loop
+    v_video_id := item ->> 'youtube_video_id';
+    v_title    := item ->> 'title';
+    v_thumb    := item ->> 'thumbnail_url';
+    v_desc     := item ->> 'description';
+    v_pos      := coalesce((item ->> 'playlist_position')::integer, 1);
+
+    if v_video_id is null or v_video_id = '' or v_title is null or v_title = '' then
+      -- Report failed/unavailable videos instead of silently dropping them
+      return query select
+        cast(null as uuid), v_video_id,
+        coalesce(v_title, item ->> 'error'), false,
+        'Unavailable or missing video metadata';
+      continue;
+    end if;
+
+    begin
+      -- Manual upsert, qualified against the OUT-parameter names in the
+      -- RETURNS TABLE clause so PostgreSQL never hits ambiguous column
+      -- references (episodes.youtube_video_id vs the OUT param).
+      select id into v_id
+      from public.episodes
+      where episodes.youtube_playlist_id = p_playlist_id
+        and episodes.youtube_video_id = v_video_id;
+
+      if v_id is null then
+        insert into public.episodes (
+          channel_id, show_id, season_number, title, description,
+          youtube_video_id, youtube_url, thumbnail_url,
+          youtube_playlist_id, playlist_position, status, enabled, sort_order
+        )
+        values (
+          p_channel_id, p_default_show_id, 1, v_title, v_desc,
+          v_video_id, 'https://www.youtube.com/watch?v=' || v_video_id,
+          coalesce(v_thumb, public.youtube_thumb(v_video_id)),
+          p_playlist_id, v_pos, 'published', true, v_pos
+        )
+        returning id into v_id;
+        v_inserted := true;
+      else
+        update public.episodes
+        set title             = v_title,
+            description       = v_desc,
+            thumbnail_url     = coalesce(v_thumb, public.youtube_thumb(v_video_id)),
+            youtube_url       = 'https://www.youtube.com/watch?v=' || v_video_id,
+            playlist_position = v_pos,
+            channel_id        = p_channel_id,
+            show_id           = p_default_show_id,
+            status            = 'published',
+            enabled           = true
+        where episodes.id = v_id;
+        v_inserted := false;
+      end if;
+
+      if v_first_id is null then
+        v_first_id := v_id;
+      end if;
+
+      return query select v_id, v_video_id, v_title, v_inserted, cast(null as text);
+    exception when others then
+      return query select cast(null as uuid), v_video_id, v_title, false, sqlerrm;
+    end;
+  end loop;
+
+  -- Wire up the channel to the playlist (first video) when it had no
+  -- default episode, so the imported content is immediately watchable.
+  if v_first_id is not null then
+    update public.channels
+    set default_episode_id = v_first_id
+    where id = p_channel_id and default_episode_id is null;
+  end if;
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- scheduling_timezone site setting (public so the player can format
+-- "Up Next" times in the very same zone the admin scheduled in).
+-- =====================================================================
+insert into public.site_settings (key, value, is_public)
+values ('scheduling_timezone', '"UTC"', true)
+on conflict (key) do nothing;
+
+-- ---------------------------------------------------------------------
+-- loop_channels_enabled site setting (public so anonymous players can
+-- read it): when true every channel repeats its episode queue forever
+-- (1..n then back to 1); when false playback stops after the last
+-- episode instead of wrapping around.
+-- =====================================================================
+insert into public.site_settings (key, value, is_public)
+values ('loop_channels_enabled', 'true', true)
+on conflict (key) do nothing;
+
+-- =====================================================================
+-- Retro TV — Fixes from Migration 008 appended (scheduling timezone)
+-- =====================================================================
+-- =====================================================================
+-- Retro TV â€” Migration 008: Fix recurring weekly scheduling timezone
+-- =====================================================================
+-- ROOT CAUSE: recurring weekly schedule slots were normalized, matched and
+-- predicted entirely in UTC. When the configured scheduling timezone
+-- differs from UTC, an evening slot in a timezone WEST of UTC aired a DAY
+-- EARLY (and the admin/Up-Next display showed the wrong weekday):
+--
+--   Example: scheduling tz = America/New_York (UTC-5).
+--   Admin schedules "Friday 8:00 PM" weekly (day_of_week=5).
+--     * Client wall clock 20:00 Fri -> UTC 01:00 Sat.
+--     * Old trigger re-anchored it to Friday 01:00 UTC.
+--     * Old get_current_program matched weekday 5 + time 01:00 in UTC
+--       => fires Thursday 20:00 local. One day early. Wrong.
+--
+-- FIX: every recurring-weekly computation now happens in the SCHEDULING
+-- TIMEZONE (the same zone documented in lib/services/scheduling_timezone.dart
+-- and migration 007). One-off dated slots are exact UTC instants and were
+-- already correct â€” they are untouched.
+--
+-- SAFE TO RE-RUN: every object below is CREATE OR REPLACE on its own.
+-- Existing recurring rows created under the old UTC-normalization will show
+-- the wrong wall time after this upgrade in non-UTC zones â€” recreate them.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- scheduling timezone helper: IANA name from site_settings, default UTC
+-- (handles both the JSON-encoded '"UTC"' form and a plain string).
+-- ---------------------------------------------------------------------
+create or replace function public.scheduling_tz()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    nullif(
+      replace(
+        (select value::text from public.site_settings
+          where key = 'scheduling_timezone'
+          limit 1),
+        '"', ''
+      ),
+      ''
+    ),
+    'UTC'
+  );
+$$;
+
+comment on function public.scheduling_tz() is 'Resolves the configured scheduling timezone (IANA name) used for all recurring-slot wall-clock math, falling back to UTC.';
+
+-- ---------------------------------------------------------------------
+-- next weekly occurrence helper: returns the soonest UTC instant STRICTLY
+-- AFTER p_at at which a recurring anchor fires, computed in the scheduling
+-- timezone so DST zones recur at the same local wall time every week.
+-- ---------------------------------------------------------------------
+create or replace function public.next_weekly_occurrence(
+  p_anchor timestamptz,
+  p_at     timestamptz default now()
+)
+returns timestamptz
+language plpgsql
+stable
+set search_path = public
+as $$
+declare
+  v_tz text := public.scheduling_tz();
+  v_now timestamp;
+  v_anchor timestamp;
+  v_candidate timestamp;
+begin
+  v_now := (p_at at time zone v_tz)::timestamp;
+  v_anchor := (p_anchor at time zone v_tz)::timestamp;
+  -- date_trunc('week', ...) starts on MONDAY; convert the stored local
+  -- weekday (0=Sunday..6=Saturday) into "days since Monday":
+  --   ((dow + 6) % 7): Sun->6 Mon->0 Tue->1 ... Sat->5
+  v_candidate := date_trunc('week', v_now)
+                 + (((extract(dow from v_anchor))::int + 6) % 7) * interval '1 day'
+                 + v_anchor::time;
+  if v_candidate <= v_now then
+    v_candidate := v_candidate + interval '7 days';
+  end if;
+  return v_candidate at time zone v_tz;
+end;
+$$;
+
+comment on function public.next_weekly_occurrence(timestamptz, timestamptz) is 'Soonest future occurrence (in UTC) of a recurring weekly slot anchor, computed in the scheduling timezone.';
+
+-- ---------------------------------------------------------------------
+-- corrected schedule trigger: normalize recurring anchors in the
+-- scheduling timezone so the stored time-of-day IS the intended wall-clock
+-- time and the date part is this week's matching weekday in that zone.
+-- ---------------------------------------------------------------------
+create or replace function public.validate_schedule_entry()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_tz text := public.scheduling_tz();
+begin
+  if new.day_of_week is null then
+    -- One-off dated slot: must be in the future. (Updates that leave the
+    -- slot's own start_time untouched are allowed so admins can still
+    -- edit notes/enabled on an already-aired entry.)
+    if (old.start_time is null or new.start_time <> old.start_time)
+       and new.start_time <= now() then
+      raise exception 'The selected date and time has already passed. Choose a future date and time.';
+    end if;
+  else
+    -- Recurring weekly template: re-anchor to THIS week's matching weekday
+    -- in the scheduling timezone. The time-of-day is the admin's wall-clock
+    -- time; the date part is only used for display/edit round-trips.
+    new.start_time := (
+      date_trunc('week', now() at time zone v_tz)
+      + (((new.day_of_week + 6) % 7)::int) * interval '1 day'
+      + (new.start_time at time zone v_tz)::time
+    ) at time zone v_tz;
+    if new.end_time is not null then
+      new.end_time := (
+        date_trunc('week', now() at time zone v_tz)
+        + (((new.day_of_week + 6) % 7)::int) * interval '1 day'
+        + (new.end_time at time zone v_tz)::time
+      ) at time zone v_tz;
+    end if;
+    if new.end_time is not null and new.end_time <= new.start_time then
+      raise exception 'End time must be after the start time';
+    end if;
+  end if;
+
+  if new.end_time is not null and new.end_time <= new.start_time then
+    raise exception 'End time must be after the start time';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_schedule_validate on public.channel_schedule;
+create trigger trg_schedule_validate
+  before insert or update on public.channel_schedule
+  for each row execute function public.validate_schedule_entry();
+
+-- ---------------------------------------------------------------------
+-- corrected get_current_program: recurring slots match the LOCAL weekday
+-- and LOCAL time-of-day in the scheduling timezone (one-off unchanged).
+-- ---------------------------------------------------------------------
+create or replace function public.get_current_program(
+  p_channel_id uuid,
+  p_at timestamptz default now()
+)
+returns table (
+  episode_id uuid,
+  schedule_id uuid,
+  start_time timestamptz,
+  end_time timestamptz,
+  is_default boolean
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_tz text := public.scheduling_tz();
+  v_local_dow integer := extract(dow from (p_at at time zone v_tz))::integer;
+begin
+  -- 1) One-off dated schedule entries covering "now" (highest specificity).
+  --    Pure UTC instant comparisons â€” exact by definition.
+  return query
+    select cs.episode_id, cs.id, cs.start_time, cs.end_time, false
+    from public.channel_schedule cs
+    where cs.channel_id = p_channel_id
+      and cs.enabled = true
+      and cs.day_of_week is null
+      and cs.start_time <= p_at
+      and (cs.end_time is null or cs.end_time > p_at)
+    order by cs.priority desc, cs.start_time desc
+    limit 1;
+
+  if found then
+    return;
+  end if;
+
+  -- 2) Recurring weekly slots matching the SCHEDULING TZ weekday + time.
+  return query
+    select cs.episode_id, cs.id, cs.start_time, cs.end_time, false
+    from public.channel_schedule cs
+    where cs.channel_id = p_channel_id
+      and cs.enabled = true
+      and cs.day_of_week = v_local_dow
+      and (cs.start_time at time zone v_tz)::time <= (p_at at time zone v_tz)::time
+      and (cs.end_time is null
+           or (cs.end_time at time zone v_tz)::time > (p_at at time zone v_tz)::time)
+    order by cs.priority desc, cs.start_time desc
+    limit 1;
+
+  if found then
+    return;
+  end if;
+
+  -- 3) Fallback: channel's default_episode_id
+  return query
+    select c.default_episode_id, null::uuid, null::timestamptz, null::timestamptz, true
+    from public.channels c
+    where c.id = p_channel_id
+      and c.default_episode_id is not null;
+end;
+$$;
+
+comment on function public.get_current_program(uuid, timestamptz) is 'Resolves the active episode for a channel: one-off dated schedule > recurring weekly schedule (matched in the scheduling timezone) > channel default_episode_id.';
+
+-- ---------------------------------------------------------------------
+-- corrected get_next_schedule: recurring occurrences computed in the
+-- scheduling timezone via next_weekly_occurrence().
+-- ---------------------------------------------------------------------
+create or replace function public.get_next_schedule(
+  p_channel_id uuid,
+  p_episode_id uuid,
+  p_at timestamptz default now()
+)
+returns table (
+  schedule_id uuid,
+  start_time timestamptz,
+  end_time timestamptz,
+  day_of_week integer
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with cand as (
+    select
+      cs.id,
+      cs.day_of_week,
+      case
+        when cs.day_of_week is null then cs.start_time
+        else public.next_weekly_occurrence(cs.start_time, p_at)
+      end as occurrence,
+      case
+        when cs.end_time is null then interval '0 seconds'
+        else (cs.end_time - cs.start_time)
+      end as dur
+    from public.channel_schedule cs
+    where cs.channel_id = p_channel_id
+      and cs.episode_id = p_episode_id
+      and cs.enabled = true
+      and (
+        (cs.day_of_week is null and cs.start_time > p_at)
+        or cs.day_of_week is not null
+      )
+  )
+  select c.id, c.occurrence, c.occurrence + c.dur, c.day_of_week
+  from cand c
+  order by c.occurrence asc
+  limit 1;
+$$;
+
+-- ---------------------------------------------------------------------
+-- corrected get_next_scheduled_program: same scheduling-tz treatment.
+-- ---------------------------------------------------------------------
+create or replace function public.get_next_scheduled_program(
+  p_channel_id uuid,
+  p_at timestamptz default now()
+)
+returns table (
+  episode_id uuid,
+  title text,
+  thumbnail_url text,
+  youtube_video_id text,
+  channel_number integer,
+  channel_name text,
+  start_time timestamptz,
+  end_time timestamptz,
+  day_of_week integer,
+  recurring boolean
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with cand as (
+    select
+      cs.id,
+      e.id as episode_id,
+      e.title,
+      e.thumbnail_url,
+      e.youtube_video_id,
+      ch.channel_number,
+      ch.name as channel_name,
+      cs.day_of_week,
+      case
+        when cs.day_of_week is null then cs.start_time
+        else public.next_weekly_occurrence(cs.start_time, p_at)
+      end as occurrence,
+      case
+        when cs.end_time is null then interval '0 seconds'
+        else (cs.end_time - cs.start_time)
+      end as dur
+    from public.channel_schedule cs
+    join public.episodes e on e.id = cs.episode_id
+    join public.channels ch on ch.id = cs.channel_id
+    where cs.channel_id = p_channel_id
+      and cs.enabled = true
+      and (
+        (cs.day_of_week is null and cs.start_time > p_at)
+        or cs.day_of_week is not null
+      )
+  )
+  select c.episode_id, c.title, c.thumbnail_url, c.youtube_video_id,
+         c.channel_number, c.channel_name,
+         c.occurrence, c.occurrence + c.dur, c.day_of_week,
+         (c.day_of_week is not null)
+  from cand c
+  order by c.occurrence asc
+  limit 1;
+$$;
+
+-- =====================================================================
+-- Retro TV — Migration 010: Per-Channel Loop Playback
+-- =====================================================================
+-- Per-channel loop switch so an admin can tune loop playback for ANY
+-- single channel (Channels panel) or ALL channels at once (Settings
+-- "apply to all" controls).
+--
+--   * TRUE  -> this channel repeats its episodes forever (1..n, back to 1).
+--   * FALSE -> this channel stops after its final episode instead of wrapping.
+--   * NULL  -> follow the global loop_channels_enabled site setting.
+--
+-- NULL is the default so existing channels behave as before until an admin
+-- explicitly tunes one. Public-readable (channels are public) and
+-- admin-writable via the existing channels_admin_update RLS policy.
+-- =====================================================================
+alter table public.channels
+  add column if not exists loop_playback boolean;
+
+comment on column public.channels.loop_playback is
+  'Per-channel loop override: TRUE loops forever, FALSE stops after the final episode, NULL follows the global loop_channels_enabled site setting.';
+
+-- ============================================================
+-- MIGRATION 011 appended (backend airing loop) for a fresh full-DB build
+-- ============================================================
+-- =====================================================================
+-- 011_backend_airing_loop.sql
+--
+-- Server-side "broadcast" loop.
+--
+-- The channel playlist now advances on the SERVER via pg_cron, whether or
+-- not any TV is open. Each enabled channel carries a small airing state:
+--
+--   channels.airing_episode_id  â€” the episode currently "on the air"
+--   channels.airing_started_at  â€” when that episode started
+--   channels.airing_ends_at     â€” when the current window expires
+--
+-- A one-minute cron job (`channel_air_tick`) walks every enabled channel
+-- and:
+--   * holds the current episode while its window is still open,
+--   * advances to the next eligible episode (canonical order from
+--     get_channel_program_queue) once the window expires, wrapping to the
+--     top when looping (per-channel loop_playback override, else global
+--     loop_channels_enabled),
+--   * on a channel that is NOT looping it parks on the final episode
+--     (the window keeps refreshing so clients never drop off),
+--   * on FIRST activation it prefers the channel's default episode when it
+--     is in the queue, otherwise it starts at the top of the queue.
+--
+-- get_current_program() is overridden to treat this airing state as the
+-- single highest-priority source: an open TV takes whatever is genuinely
+-- airing, then falls back to one-off schedules, recurring weekly slots and
+-- finally default_episode_id. An extra `is_airing` boolean is returned so
+-- clients can distinguish "this is the live server program" from a merely
+-- resolved fallback.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1) Airing state columns on channels
+-- ---------------------------------------------------------------------
+alter table public.channels
+  add column if not exists airing_episode_id uuid,
+  add column if not exists airing_started_at timestamptz,
+  add column if not exists airing_ends_at timestamptz;
+
+comment on column public.channels.airing_episode_id is
+  'Episode currently on the air for this channel, maintained by the server-side pg_cron loop (channel_air_tick). NULL when nothing is airing yet.';
+comment on column public.channels.airing_started_at is
+  'When the currently airing episode began (set by channel_air_tick).';
+comment on column public.channels.airing_ends_at is
+  'When the currently airing window expires; beyond this the cron job advances to the next episode.';
+
+-- ---------------------------------------------------------------------
+-- 2) pg_cron extension
+-- ---------------------------------------------------------------------
+create extension if not exists pg_cron;
+
+-- ---------------------------------------------------------------------
+-- 3) The tick function (security definer so it can read everything)
+-- ---------------------------------------------------------------------
+create or replace function public.channel_air_tick()
+returns integer
+language plpgsql
+security definer
+set search_path = public
+set statement_timeout = '30s'
+as $$
+declare
+  v_c record;
+  v_ids uuid[];
+  v_n integer;
+  v_idx integer;
+  v_found boolean;
+  v_loop boolean;
+  v_next uuid;
+  v_dur integer;
+  v_updated integer := 0;
+begin
+  for v_c in
+    select c.id, c.airing_episode_id, c.airing_ends_at,
+           c.default_episode_id, c.loop_playback
+    from public.channels c
+    where c.enabled = true
+  loop
+    -- Canonical eligible queue in playback order (episodes reserved by a
+    -- future one-off slot are excluded server-side).
+select array_agg(t.id order by t.ord) into v_ids
+    from (
+      select q.id, row_number() over () as ord
+      from public.get_channel_program_queue(v_c.id, now()) q
+    ) t;
+
+    v_n := 0;
+    if v_ids is not null then
+      v_n := cardinality(v_ids);
+    end if;
+
+    -- Per-channel override wins, otherwise the global site setting.
+    v_loop := coalesce(
+      v_c.loop_playback,
+      (select (s.value #>> '{}')::boolean
+         from public.site_settings s
+        where s.key = 'loop_channels_enabled')
+    );
+
+    v_next := null;
+
+    if v_n > 0 then
+      if v_c.airing_episode_id is not null
+         and (v_c.airing_ends_at is null or v_c.airing_ends_at > now()) then
+        -- Current episode is still within its window: hold it.
+        v_next := v_c.airing_episode_id;
+      elsif v_c.airing_episode_id is not null then
+        -- Window expired: advance to the next episode after the current.
+        v_found := false;
+        for v_idx in 1..v_n loop
+          if v_ids[v_idx] = v_c.airing_episode_id then
+            v_found := true;
+            if v_idx < v_n then
+              v_next := v_ids[v_idx + 1];
+            elsif v_loop then
+              v_next := v_ids[1];           -- loop back to the top
+            else
+              v_next := v_c.airing_episode_id; -- park on the final episode
+            end if;
+            exit;
+          end if;
+        end loop;
+        if not v_found then
+          -- Current no longer eligible (disabled/removed): restart at top.
+          v_next := v_ids[1];
+        end if;
+      else
+        -- First activation: prefer the channel's default episode when it is
+        -- in the queue, otherwise start at the top of the queue.
+        v_next := v_ids[1];
+        if v_c.default_episode_id is not null then
+          for v_idx in 1..v_n loop
+            if v_ids[v_idx] = v_c.default_episode_id then
+              v_next := v_ids[v_idx];
+              exit;
+            end if;
+          end loop;
+        end if;
+      end if;
+
+      if v_next is distinct from v_c.airing_episode_id then
+        select e.duration_seconds into v_dur
+        from public.episodes e where e.id = v_next;
+        v_dur := greatest(coalesce(v_dur, 1800), 60);
+        update public.channels c set
+          airing_episode_id = v_next,
+          airing_started_at = now(),
+          airing_ends_at = now() + make_interval(secs => v_dur)
+        where c.id = v_c.id;
+        v_updated := v_updated + 1;
+      elsif v_c.airing_ends_at is null then
+        -- Same episode still airing but the window timestamp is missing:
+        -- backfill it so clients/gateways can rely on the window.
+        select e.duration_seconds into v_dur
+        from public.episodes e where e.id = v_next;
+        v_dur := greatest(coalesce(v_dur, 1800), 60);
+        update public.channels c
+        set airing_ends_at = now() + make_interval(secs => v_dur)
+        where c.id = v_c.id;
+      end if;
+    else
+      -- No eligible episodes at all: nothing can be airing.
+      if v_c.airing_episode_id is not null then
+        update public.channels c
+        set airing_episode_id = null,
+            airing_started_at = null,
+            airing_ends_at = null
+        where c.id = v_c.id;
+        v_updated := v_updated + 1;
+      end if;
+    end if;
+  end loop;
+
+  return v_updated;
+end;
+$$;
+
+comment on function public.channel_air_tick() is
+  'Advances the server-side broadcast loop one step for every enabled channel. Returns the number of channels whose airing state changed. Run by pg_cron every minute.';
+
+-- ---------------------------------------------------------------------
+-- 4) One-minute cron schedule (idempotent)
+-- ---------------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from cron.job where jobname = 'retro-tv-airing') then
+perform cron.schedule(
+      'retro-tv-airing',
+      '* * * * *',
+      'select public.channel_air_tick()'
+    );
+  end if;
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- 5) get_current_program override: server airing is the top priority
+-- ---------------------------------------------------------------------
+-- OUT-param row type changed (added `is_airing`), so the old signature
+-- must be dropped before the CREATE OR REPLACE.
+drop function if exists public.get_current_program(uuid, timestamptz);
+
+create or replace function public.get_current_program(
+  p_channel_id uuid,
+  p_at timestamptz default now()
+)
+returns table (
+  episode_id uuid,
+  schedule_id uuid,
+  start_time timestamptz,
+  end_time timestamptz,
+  is_default boolean,
+  is_airing boolean
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_tz text := public.scheduling_tz();
+  v_local_dow integer := extract(dow from (p_at at time zone v_tz))::integer;
+begin
+  -- 0) Server-side broadcast airing (backend loop): the single source of
+  --    truth for "what is genuinely on the air right now".
+  return query
+    select c.airing_episode_id,
+           null::uuid,
+           c.airing_started_at,
+           c.airing_ends_at,
+           false,
+           true
+    from public.channels c
+    where c.id = p_channel_id
+      and c.airing_episode_id is not null
+      and c.airing_started_at is not null
+      and (c.airing_ends_at is null or c.airing_ends_at > p_at);
+
+  if found then
+    return;
+  end if;
+
+  -- 1) One-off dated schedule entries covering "now". Pure UTC instant
+  --    comparisons â€” exact by definition.
+  return query
+    select cs.episode_id, cs.id, cs.start_time, cs.end_time, false, false
+    from public.channel_schedule cs
+    where cs.channel_id = p_channel_id
+      and cs.enabled = true
+      and cs.day_of_week is null
+      and cs.start_time <= p_at
+      and (cs.end_time is null or cs.end_time > p_at)
+    order by cs.priority desc, cs.start_time desc
+    limit 1;
+
+  if found then
+    return;
+  end if;
+
+  -- 2) Recurring weekly slots matching the SCHEDULING TZ weekday + time.
+  return query
+    select cs.episode_id, cs.id, cs.start_time, cs.end_time, false, false
+    from public.channel_schedule cs
+    where cs.channel_id = p_channel_id
+      and cs.enabled = true
+      and cs.day_of_week = v_local_dow
+      and (cs.start_time at time zone v_tz)::time <= (p_at at time zone v_tz)::time
+      and (cs.end_time is null
+           or (cs.end_time at time zone v_tz)::time > (p_at at time zone v_tz)::time)
+    order by cs.priority desc, cs.start_time desc
+    limit 1;
+
+  if found then
+    return;
+  end if;
+
+  -- 3) Fallback: channel's default_episode_id
+  return query
+    select c.default_episode_id, null::uuid, null::timestamptz, null::timestamptz, true, false
+    from public.channels c
+    where c.id = p_channel_id
+      and c.default_episode_id is not null;
+end;
+$$;
+
+comment on function public.get_current_program(uuid, timestamptz) is
+  'Resolves the active episode for a channel: server-side broadcast airing (backend loop) > one-off schedule > recurring weekly (in the scheduling timezone) > default_episode_id. `is_airing` flags episodes produced by the backend loop.';

@@ -2,6 +2,12 @@
 .env
 .env.local
 
+# Android release signing
+android/key.properties
+android/upload-keystore.jks
+*.jks
+*.keystore
+
 # Miscellaneous
 *.class
 *.log
@@ -47,3 +53,16 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+.vercel
+.env*
+
+# Large build artifacts & signing keys (do not push to GitHub)
+*.apk
+*.aab
+*.pem
+/release/
+/Screenshots/
+app-debug.apk
+app-release.apk
+android/app/build.gradle.kts.bak

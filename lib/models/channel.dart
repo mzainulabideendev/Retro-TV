@@ -14,6 +14,11 @@ class Channel {
   final bool isKidsFriendly;
   final int sortOrder;
 
+  /// Per-channel loop override (NULL = follow the global site setting):
+  /// true loops this channel's episodes forever, false stops after the
+  /// final episode instead of wrapping back to episode 1.
+  final bool? loopPlayback;
+
   Channel({
     required this.id,
     required this.channelNumber,
@@ -29,6 +34,7 @@ class Channel {
     required this.featured,
     required this.isKidsFriendly,
     required this.sortOrder,
+    this.loopPlayback,
   });
 
   factory Channel.fromMap(Map<String, dynamic> map) {
@@ -47,6 +53,7 @@ class Channel {
       featured: map['featured'] as bool? ?? false,
       isKidsFriendly: map['is_kids_friendly'] as bool? ?? false,
       sortOrder: (map['sort_order'] as num?)?.toInt() ?? 0,
+      loopPlayback: map['loop_playback'] as bool?,
     );
   }
 
@@ -64,6 +71,7 @@ class Channel {
     'featured': featured,
     'is_kids_friendly': isKidsFriendly,
     'sort_order': sortOrder,
+    'loop_playback': loopPlayback,
   };
 
   Channel copyWith({
@@ -79,6 +87,7 @@ class Channel {
     bool? featured,
     bool? isKidsFriendly,
     int? sortOrder,
+    bool? loopPlayback,
   }) {
     return Channel(
       id: id,
@@ -95,6 +104,7 @@ class Channel {
       featured: featured ?? this.featured,
       isKidsFriendly: isKidsFriendly ?? this.isKidsFriendly,
       sortOrder: sortOrder ?? this.sortOrder,
+      loopPlayback: loopPlayback ?? this.loopPlayback,
     );
   }
 }

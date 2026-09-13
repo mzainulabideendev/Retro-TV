@@ -17,29 +17,37 @@ class AdminPageScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final small = constraints.maxWidth < 600;
+        final pad = small ? 12.0 : 24.0;
+        return Padding(
+          padding: EdgeInsets.all(pad),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
-                ),
+                  if (action != null) action!,
+                ],
               ),
-              if (action != null) action!,
+              const SizedBox(height: 20),
+              Expanded(child: child),
             ],
           ),
-          const SizedBox(height: 20),
-          Expanded(child: child),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -87,6 +95,31 @@ class LoadingBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       const Center(child: CircularProgressIndicator());
+}
+
+/// Overflow-safe container for wide widgets like [DataTable]. It stretches
+/// the child to fill the available panel width on wide screens and, when the
+/// content is wider than the screen (small phones), scrolls it horizontally
+/// instead of painting the classic overflow stripes.
+class ResponsiveTableScroll extends StatelessWidget {
+  final Widget child;
+
+  const ResponsiveTableScroll({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: constraints.maxWidth),
+            child: SingleChildScrollView(child: child),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class ErrorBox extends StatelessWidget {

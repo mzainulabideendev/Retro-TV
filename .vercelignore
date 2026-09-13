@@ -1,0 +1,18 @@
+# Vercel only needs the pre-built Flutter web output in build/web.
+# Everything else is source/build scaffolding that only bloats the upload.
+.git
+.github
+.dart_tool
+.idea
+.vscode
+android
+ios
+linux
+macos
+windows
+supabase
+node_modules
+*.apk
+*.aab
+*.ipa
+*.zip

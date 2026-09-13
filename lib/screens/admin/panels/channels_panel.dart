@@ -121,6 +121,36 @@ class _ChannelsPanelState extends State<ChannelsPanel> {
     }
   }
 
+  /// Sets the channel's per-channel loop override. Null restores "follow
+  /// the global setting" behavior; true/false pins looping ON/STOP.
+  Future<void> _setLoop(Channel c, bool? value) async {
+    try {
+      await ContentService.updateChannel(c.id, {'loop_playback': value});
+      await ContentService.logAdminAction(
+        'ADMIN_UPDATED_CHANNEL',
+        entityType: 'channel',
+        entityId: c.id,
+      );
+      if (mounted) {
+        final label = value == null
+            ? 'follows the global default'
+            : value
+                ? 'repeats episodes forever'
+                : 'stops after the final episode';
+        showSuccess(context, '${c.name}: loop $label.');
+      }
+      _load();
+    } catch (e) {
+      if (mounted) showError(context, 'Failed to update channel loop.');
+    }
+  }
+
+  (String, IconData) _loopLabel(bool? value) => switch (value) {
+        true => ('Loop', Icons.repeat),
+        false => ('Stop', Icons.stop),
+        null => ('Default', Icons.settings),
+      };
+
   @override
   Widget build(BuildContext context) {
     return AdminPageScaffold(
@@ -149,13 +179,14 @@ class _ChannelsPanelState extends State<ChannelsPanel> {
                 const SizedBox(height: 16),
                 Expanded(
                   child: Card(
-                    child: SingleChildScrollView(
+                    child: ResponsiveTableScroll(
                       child: DataTable(
                         columns: const [
                           DataColumn(label: Text('#')),
                           DataColumn(label: Text('Channel')),
                           DataColumn(label: Text('Category')),
                           DataColumn(label: Text('Type')),
+                          DataColumn(label: Text('Loop')),
                           DataColumn(label: Text('Status')),
                           DataColumn(label: Text('Actions')),
                         ],
@@ -170,6 +201,61 @@ class _ChannelsPanelState extends State<ChannelsPanel> {
                               DataCell(Text(c.name)),
                               DataCell(Text(_categoryName(c.categoryId))),
                               DataCell(Text(c.channelType)),
+                              DataCell(
+                                PopupMenuButton<bool?>(
+                                  initialValue: c.loopPlayback,
+                                  tooltip:
+                                      'Episode loop: Default (follows the '
+                                      'global setting), Loop (repeats forever), '
+                                      'or Stop (ends after the last episode)',
+                                  itemBuilder: (_) => const [
+                                    PopupMenuItem(
+                                      value: null,
+                                      child: Text(
+                                        'Default (follows global)',
+                                      ),
+                                    ),
+                                    PopupMenuItem(
+                                      value: true,
+                                      child: Text(
+                                        'Loop ON (repeat forever)',
+                                      ),
+                                    ),
+                                    PopupMenuItem(
+                                      value: false,
+                                      child: Text(
+                                        'Stop after final episode',
+                                      ),
+                                    ),
+                                  ],
+                                  onSelected: (v) => _setLoop(c, v),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 8,
+                                      horizontal: 4,
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          _loopLabel(c.loopPlayback).$2,
+                                          size: 16,
+                                          color: c.loopPlayback == true
+                                              ? Colors.green
+                                              : c.loopPlayback == false
+                                              ? Colors.orange
+                                              : Colors.white54,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          _loopLabel(c.loopPlayback).$1,
+                                          style: const TextStyle(fontSize: 13),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
                               DataCell(StatusChip(enabled: c.enabled)),
                               DataCell(
                                 Row(

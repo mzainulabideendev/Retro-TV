@@ -3,6 +3,7 @@ import '../../../models/channel.dart';
 import '../../../models/episode.dart';
 import '../../../models/schedule.dart';
 import '../../../services/content_service.dart';
+import '../../../services/scheduling_timezone.dart';
 import '../../../widgets/admin/admin_shared.dart';
 
 class SchedulesPanel extends StatefulWidget {
@@ -19,16 +20,6 @@ class _SchedulesPanelState extends State<SchedulesPanel> {
   Channel? _selectedChannel;
   List<ScheduleEntry> _entries = [];
   List<Episode> _episodes = [];
-
-  static const _days = [
-    'Sunday',
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-  ];
 
   @override
   void initState() {
@@ -62,7 +53,7 @@ class _SchedulesPanelState extends State<SchedulesPanel> {
     _episodes = await ContentService.getEpisodes(
       channelId: _selectedChannel!.id,
     );
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   String _episodeTitle(String id) => _episodes
@@ -79,6 +70,9 @@ class _SchedulesPanelState extends State<SchedulesPanel> {
         ),
       )
       .title;
+
+  ScheduleStatus _statusAt(ScheduleEntry e) =>
+      e.statusAt(DateTime.now().toUtc());
 
   Future<void> _openEditor({ScheduleEntry? entry}) async {
     if (_selectedChannel == null) return;
@@ -148,73 +142,132 @@ class _SchedulesPanelState extends State<SchedulesPanel> {
                     _loadSchedule();
                   },
                 ),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Icon(
+                        Icons.schedule,
+                        size: 15,
+                        color: Colors.white38,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'All times shown in ${SchedulingClock.zoneName} '
+                        '(${SchedulingClock.offsetLabel()}) — the '
+                        'scheduling timezone (selectable in Settings).',
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                          height: 1.4,
+                        ),
+                        softWrap: true,
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 16),
                 Expanded(
                   child: Card(
-                    child: SingleChildScrollView(
-                      child: DataTable(
-                        columns: const [
-                          DataColumn(label: Text('Episode')),
-                          DataColumn(label: Text('Start')),
-                          DataColumn(label: Text('End')),
-                          DataColumn(label: Text('Day')),
-                          DataColumn(label: Text('Priority')),
-                          DataColumn(label: Text('Status')),
-                          DataColumn(label: Text('Actions')),
-                        ],
-                        rows: _entries.map((e) {
-                          return DataRow(
-                            cells: [
-                              DataCell(Text(_episodeTitle(e.episodeId))),
-                              DataCell(
-                                Text(
-                                  '${e.startTime.hour.toString().padLeft(2, '0')}:${e.startTime.minute.toString().padLeft(2, '0')}',
-                                ),
-                              ),
-                              DataCell(
-                                Text(
-                                  e.endTime != null
-                                      ? '${e.endTime!.hour.toString().padLeft(2, '0')}:${e.endTime!.minute.toString().padLeft(2, '0')}'
-                                      : '—',
-                                ),
-                              ),
-                              DataCell(
-                                Text(
-                                  e.dayOfWeek != null
-                                      ? _days[e.dayOfWeek!]
-                                      : 'One-off',
-                                ),
-                              ),
-                              DataCell(Text('${e.priority}')),
-                              DataCell(StatusChip(enabled: e.enabled)),
-                              DataCell(
-                                Row(
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.edit, size: 18),
-                                      onPressed: () => _openEditor(entry: e),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.delete,
-                                        size: 18,
-                                        color: Colors.red,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        return SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minWidth: constraints.maxWidth,
+                            ),
+                            child: SingleChildScrollView(
+                              child: DataTable(
+                                columns: const [
+                                  DataColumn(label: Text('Episode')),
+                                  DataColumn(label: Text('Scheduled Start')),
+                                  DataColumn(label: Text('End')),
+                                  DataColumn(label: Text('Type')),
+                                  DataColumn(label: Text('Status')),
+                                  DataColumn(label: Text('Actions')),
+                                ],
+                                rows: _entries.map((e) {
+                                  final status = _statusAt(e);
+                                  return DataRow(
+                                    cells: [
+                                      DataCell(
+                                        Text(_episodeTitle(e.episodeId)),
                                       ),
-                                      onPressed: () => _delete(e),
-                                    ),
-                                  ],
-                                ),
+                                      DataCell(Text(e.displayStart)),
+                                      DataCell(Text(e.displayEnd)),
+                                      DataCell(
+                                        Text(
+                                          e.dayOfWeek != null
+                                              ? 'Weekly recurring'
+                                              : 'One-off',
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Text(
+                                          scheduleStatusLabel(status),
+                                          style: TextStyle(
+                                            color: _statusColor(status),
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              icon: const Icon(
+                                                Icons.edit,
+                                                size: 18,
+                                              ),
+                                              onPressed: () =>
+                                                  _openEditor(entry: e),
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(
+                                                Icons.delete,
+                                                size: 18,
+                                                color: Colors.red,
+                                              ),
+                                              onPressed: () => _delete(e),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }).toList(),
                               ),
-                            ],
-                          );
-                        }).toList(),
-                      ),
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ),
               ],
             ),
     );
+  }
+
+  Color _statusColor(ScheduleStatus s) {
+    switch (s) {
+      case ScheduleStatus.live:
+        return Colors.orangeAccent;
+      case ScheduleStatus.completed:
+        return Colors.grey;
+      case ScheduleStatus.cancelled:
+        return Colors.redAccent;
+      case ScheduleStatus.recurring:
+        return Colors.lightBlueAccent;
+      case ScheduleStatus.scheduled:
+        return Colors.lightGreenAccent;
+    }
   }
 }
 
@@ -233,14 +286,6 @@ class _ScheduleEditorDialog extends StatefulWidget {
 }
 
 class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
-  String? _episodeId;
-  TimeOfDay _startTime = const TimeOfDay(hour: 8, minute: 0);
-  TimeOfDay? _endTime;
-  int? _dayOfWeek;
-  int _priority = 0;
-  bool _enabled = true;
-  bool _saving = false;
-
   static const _days = [
     'Sunday',
     'Monday',
@@ -251,23 +296,37 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
     'Saturday',
   ];
 
+  String? _episodeId;
+  TimeOfDay _startTime = const TimeOfDay(hour: 8, minute: 0);
+  TimeOfDay? _endTime;
+  DateTime _oneOffDate = _todayWall();
+  int? _dayOfWeek;
+  int _priority = 0;
+  bool _enabled = true;
+  bool _saving = false;
+
+  /// Today's date in the scheduling timezone (naive wall clock).
+  static DateTime _todayWall() =>
+      SchedulingClock.toWallClock(DateTime.now().toUtc());
+
   @override
   void initState() {
     super.initState();
     final e = widget.entry;
     _episodeId = e?.episodeId;
     if (e != null) {
-      _startTime = TimeOfDay.fromDateTime(e.startTime);
-      _endTime = e.endTime != null ? TimeOfDay.fromDateTime(e.endTime!) : null;
+      // Round-trip the stored UTC instant through the scheduling timezone
+      // so the admin sees the exact wall-clock date AND time they saved.
+      final wall = SchedulingClock.toWallClock(e.startTime);
+      _startTime = TimeOfDay(hour: wall.hour, minute: wall.minute);
+      _oneOffDate = DateTime(wall.year, wall.month, wall.day);
+      _endTime = e.endTime != null
+          ? TimeOfDay.fromDateTime(SchedulingClock.toWallClock(e.endTime!))
+          : null;
       _dayOfWeek = e.dayOfWeek;
       _priority = e.priority;
       _enabled = e.enabled;
     }
-  }
-
-  DateTime _todayWithTime(TimeOfDay t) {
-    final now = DateTime.now();
-    return DateTime(now.year, now.month, now.day, t.hour, t.minute);
   }
 
   Future<void> _save() async {
@@ -275,14 +334,31 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
       showError(context, 'Please select an episode.');
       return;
     }
+    if (_endTime != null && !_endTime!.isAfter(_startTime)) {
+      showError(context, 'End time must be after the start time.');
+      return;
+    }
     setState(() => _saving = true);
     try {
+      final startUtc = _buildWallDateTime(_startTime);
+      // One-off entries must be in the future (past entries are rejected
+      // server-side too — this is just a friendly early check).
+      if (_dayOfWeek == null && !startUtc.isAfter(DateTime.now().toUtc())) {
+        setState(() => _saving = false);
+        showError(
+          context,
+          'The selected date and time has already passed. '
+          'Choose a future date and time.',
+        );
+        return;
+      }
+
       final entry = ScheduleEntry(
         id: widget.entry?.id ?? '',
         channelId: widget.channelId,
         episodeId: _episodeId!,
-        startTime: _todayWithTime(_startTime),
-        endTime: _endTime != null ? _todayWithTime(_endTime!) : null,
+        startTime: startUtc,
+        endTime: _endTime != null ? _buildWallDateTime(_endTime!) : null,
         dayOfWeek: _dayOfWeek,
         priority: _priority,
         enabled: _enabled,
@@ -308,8 +384,50 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       setState(() => _saving = false);
-      if (mounted) showError(context, 'Failed to save schedule entry.');
+      if (mounted) {
+        final msg = _friendlyError(e);
+        showError(context, msg);
+      }
     }
+  }
+
+  /// Builds a wall-clock DateTime from the selected date + time and
+  /// converts it to the UTC instant using the scheduling timezone — the
+  /// single input boundary for the whole scheduling flow.
+  DateTime _buildWallDateTime(TimeOfDay t) {
+    if (_dayOfWeek != null) {
+      // Recurring templates: weekday + time. The anchor date does not
+      // matter — the server canonicalizes it to this week's occurrence.
+      final today = _todayWall();
+      final wall = DateTime(
+        today.year,
+        today.month,
+        today.day,
+        t.hour,
+        t.minute,
+      );
+      return SchedulingClock.toUtcFromWallClock(wall);
+    }
+    final wall = DateTime(
+      _oneOffDate.year,
+      _oneOffDate.month,
+      _oneOffDate.day,
+      t.hour,
+      t.minute,
+    );
+    return SchedulingClock.toUtcFromWallClock(wall);
+  }
+
+  String _friendlyError(Object e) {
+    final text = e.toString();
+    if (text.contains('has already passed') ||
+        text.contains('already chosen')) {
+      return 'The selected date and time has already passed. Choose a future date and time.';
+    }
+    if (text.contains('already exists') || text.contains('duplicate')) {
+      return 'This episode is already scheduled at that time on this channel.';
+    }
+    return 'Failed to save schedule entry.';
   }
 
   Future<void> _pickTime(bool isStart) async {
@@ -328,8 +446,25 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
     }
   }
 
+  Future<void> _pickDate() async {
+    final today = _todayWall();
+    var first = DateTime(today.year, today.month, today.day);
+    if (_oneOffDate.isBefore(first)) first = _oneOffDate;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _oneOffDate,
+      firstDate: first,
+      lastDate: first.add(const Duration(days: 366 * 2)),
+      helpText: 'Pick the airing DATE (scheduling timezone)',
+    );
+    if (picked != null) {
+      setState(() => _oneOffDate = picked);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isOneOff = _dayOfWeek == null;
     return Dialog(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 460),
@@ -349,6 +484,12 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                const SizedBox(height: 4),
+                Text(
+                  'Times are in ${SchedulingClock.zoneName} '
+                  '(${SchedulingClock.offsetLabel()}) — change it in Settings.',
+                  style: const TextStyle(color: Colors.white54, fontSize: 11),
+                ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   initialValue: _episodeId,
@@ -362,6 +503,31 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
                   onChanged: (v) => setState(() => _episodeId = v),
                 ),
                 const SizedBox(height: 12),
+                DropdownButtonFormField<int?>(
+                  initialValue: _dayOfWeek,
+                  decoration: const InputDecoration(labelText: 'Schedule type'),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text('One-off — airs on an exact date'),
+                    ),
+                    ..._days.asMap().entries.map(
+                      (e) => DropdownMenuItem(
+                        value: e.key,
+                        child: Text('Weekly — every ${e.value}'),
+                      ),
+                    ),
+                  ],
+                  onChanged: (v) => setState(() => _dayOfWeek = v),
+                ),
+                const SizedBox(height: 12),
+                if (isOneOff)
+                  OutlinedButton.icon(
+                    onPressed: _pickDate,
+                    icon: const Icon(Icons.calendar_today, size: 18),
+                    label: Text('Airing date: ${_formatDate(_oneOffDate)}'),
+                  ),
+                if (isOneOff) const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
@@ -384,31 +550,6 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<int?>(
-                  initialValue: _dayOfWeek,
-                  decoration: const InputDecoration(
-                    labelText:
-                        'Day of Week (recurring) — leave blank for one-off',
-                  ),
-                  items: [
-                    const DropdownMenuItem(
-                      value: null,
-                      child: Text('One-off (dated)'),
-                    ),
-                    ..._days.asMap().entries.map(
-                      (e) =>
-                          DropdownMenuItem(value: e.key, child: Text(e.value)),
-                    ),
-                  ],
-                  onChanged: (v) => setState(() => _dayOfWeek = v),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  initialValue: _priority.toString(),
-                  decoration: const InputDecoration(labelText: 'Priority'),
-                  keyboardType: TextInputType.number,
-                  onChanged: (v) => _priority = int.tryParse(v) ?? 0,
-                ),
                 CheckboxListTile(
                   value: _enabled,
                   title: const Text('Enabled'),
@@ -442,5 +583,23 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
         ),
       ),
     );
+  }
+
+  String _formatDate(DateTime d) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[d.month - 1]} ${d.day.toString().padLeft(2, '0')}, ${d.year}';
   }
 }

@@ -71,7 +71,7 @@ class _TvStylesPanelState extends State<TvStylesPanel> {
           : _error != null
           ? ErrorBox(message: _error!, onRetry: _load)
           : Card(
-              child: SingleChildScrollView(
+              child: ResponsiveTableScroll(
                 child: DataTable(
                   columns: const [
                     DataColumn(label: Text('Preview')),

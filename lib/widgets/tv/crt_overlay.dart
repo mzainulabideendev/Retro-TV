@@ -82,6 +82,25 @@ class _CrtOverlayState extends State<CrtOverlay>
               ],
             ),
           ),
+          // Vintage color grade: a warm, slightly aged wash fading out
+          // toward the corners, like an old phosphor screen.
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: Alignment.center,
+                radius: 1.1,
+                colors: [
+                  const Color(0xFFE8C98F).withValues(alpha: 0.035),
+                  const Color(0xFF5C3D1E).withValues(alpha: 0.09),
+                ],
+                stops: const [0.45, 1.0],
+              ),
+            ),
+          ),
+          // Coarse phosphor grain (subtle, static speckle).
+          CustomPaint(
+            painter: _GrainPainter(opacity: 0.05),
+          ),
           if (!widget.reduceMotion)
             AnimatedBuilder(
               animation: _flickerController,
@@ -120,5 +139,36 @@ class _ScanlinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ScanlinePainter oldDelegate) =>
+      oldDelegate.opacity != opacity;
+}
+
+/// Paints fine static phosphor grain over the picture for a decayed
+/// vintage-TV texture. Deliberately static (not animated) so it costs
+/// nothing at runtime; the subtle flicker already provides the motion.
+class _GrainPainter extends CustomPainter {
+  final double opacity;
+  const _GrainPainter({required this.opacity});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (opacity <= 0) return;
+    final rng = Random(0xC0FFEE);
+    final paint = Paint()
+      ..color = Colors.black.withValues(alpha: opacity);
+    final count =
+        (size.width * size.height * 0.015).clamp(120, 3000).toInt();
+    for (var i = 0; i < count; i++) {
+      final x = rng.nextDouble() * size.width;
+      final y = rng.nextDouble() * size.height;
+      canvas.drawCircle(
+        Offset(x, y),
+        1.0 + rng.nextDouble(),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _GrainPainter oldDelegate) =>
       oldDelegate.opacity != opacity;
 }

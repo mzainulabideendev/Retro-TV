@@ -16,6 +16,8 @@ class Episode {
   final String status; // draft | published | disabled
   final bool enabled;
   final int sortOrder;
+  final String? youtubePlaylistId;
+  final int? playlistPosition;
 
   Episode({
     required this.id,
@@ -35,6 +37,8 @@ class Episode {
     required this.status,
     required this.enabled,
     required this.sortOrder,
+    this.youtubePlaylistId,
+    this.playlistPosition,
   });
 
   factory Episode.fromMap(Map<String, dynamic> map) {
@@ -58,6 +62,8 @@ class Episode {
       status: map['status'] as String? ?? 'draft',
       enabled: map['enabled'] as bool? ?? true,
       sortOrder: (map['sort_order'] as num?)?.toInt() ?? 0,
+      youtubePlaylistId: map['youtube_playlist_id'] as String?,
+      playlistPosition: (map['playlist_position'] as num?)?.toInt(),
     );
   }
 
@@ -78,5 +84,7 @@ class Episode {
     'status': status,
     'enabled': enabled,
     'sort_order': sortOrder,
+    'youtube_playlist_id': youtubePlaylistId,
+    'playlist_position': playlistPosition,
   };
 }

@@ -75,7 +75,7 @@ class _CategoriesPanelState extends State<CategoriesPanel> {
           : _error != null
           ? ErrorBox(message: _error!, onRetry: _load)
           : Card(
-              child: SingleChildScrollView(
+              child: ResponsiveTableScroll(
                 child: DataTable(
                   columns: const [
                     DataColumn(label: Text('Name')),

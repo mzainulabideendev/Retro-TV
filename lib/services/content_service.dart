@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import '../models/category.dart';
 import '../models/channel.dart';
 import '../models/episode.dart';
+import '../models/playlist_import_result.dart';
 import '../models/schedule.dart';
 import '../models/show.dart';
 import '../models/tv_style.dart';
@@ -119,6 +120,17 @@ class ContentService {
 
   static Future<void> deleteChannel(String id) async {
     await _client.from('channels').delete().eq('id', id);
+  }
+
+  /// Applies a single loop-playback value to EVERY channel, so an admin can
+  /// switch looping on/off for all TV channels at once (in addition to the
+  /// per-channel override). A non-null id filter keeps the update explicit
+  /// while still covering every row (all channel ids are uuids).
+  static Future<void> setLoopForAllChannels(bool enabled) async {
+    await _client
+        .from('channels')
+        .update({'loop_playback': enabled})
+        .neq('id', '00000000-0000-0000-0000-000000000000');
   }
 
   // ---------------------------------------------------------------
@@ -285,33 +297,157 @@ class ContentService {
   }
 
   /// Resolves the currently-active episode for a channel using the
-  /// `get_current_program` Postgres function (schedule-aware, falls back
-  /// to the channel's default episode).
-  static Future<Episode?> getCurrentProgram(String channelId) async {
+  /// `get_current_program` Postgres function (server-side airing >
+  /// scheduled > channel default). Returns the raw row so callers can
+  /// distinguish a genuine "on the air" program (`is_airing == true`)
+  /// from a schedule/default fallback. `null` when nothing resolves.
+  static Future<Map<String, dynamic>?> getCurrentProgramRaw(
+    String channelId,
+  ) async {
     try {
       final res = await _client.rpc(
         'get_current_program',
         params: {'p_channel_id': channelId},
       );
       if (res is List && res.isNotEmpty) {
-        final episodeId = res.first['episode_id'] as String?;
-        if (episodeId != null) {
-          return getEpisodeById(episodeId);
-        }
+        final row = Map<String, dynamic>.from(res.first as Map);
+        if (row['episode_id'] != null) return row;
       }
       return null;
     } catch (e) {
-      if (kDebugMode) debugPrint('getCurrentProgram error: $e');
-      // Fallback: try channel default_episode_id directly
-      final channel = await _client
-          .from('channels')
-          .select()
-          .eq('id', channelId)
-          .maybeSingle();
-      final defaultId = channel?['default_episode_id'] as String?;
-      if (defaultId != null) return getEpisodeById(defaultId);
+      if (kDebugMode) debugPrint('getCurrentProgramRaw error: $e');
       return null;
     }
+  }
+
+  static Future<Episode?> getCurrentProgram(String channelId) async {
+    final row = await getCurrentProgramRaw(channelId);
+    if (row != null) {
+      final episodeId = row['episode_id'] as String?;
+      if (episodeId != null && episodeId.isNotEmpty) {
+        try {
+          return await getEpisodeById(episodeId);
+        } catch (_) {}
+      }
+    }
+    // Fallback: try channel default_episode_id directly
+    final channel = await _client
+        .from('channels')
+        .select()
+        .eq('id', channelId)
+        .maybeSingle();
+    final defaultId = channel?['default_episode_id'] as String?;
+    if (defaultId != null) return getEpisodeById(defaultId);
+    return null;
+  }
+
+  // ---------------------------------------------------------------
+  // Playback program queue / Up Next (migration 007 RPCs)
+  // ---------------------------------------------------------------
+
+  /// Currently ELIGIBLE episodes for a channel, in canonical playback
+  /// order (`get_channel_program_queue`). Episodes reserved by a future
+  /// one-off schedule slot are excluded by the server so a scheduled
+  /// premiere never plays early.
+  static Future<List<Episode>> getChannelProgramQueue(String channelId) async {
+    final res = await _client.rpc(
+      'get_channel_program_queue',
+      params: {'p_channel_id': channelId},
+    );
+    return (res as List).map((m) => Episode.fromMap(m)).toList();
+  }
+
+  /// Nearest schedule entry (one-off or recurring anchor) for a specific
+  /// episode on a channel.
+  static Future<ScheduleEntry?> getNextScheduleEntry(
+    String channelId,
+    String episodeId,
+  ) async {
+    final res = await _client.rpc(
+      'get_next_schedule',
+      params: {'p_channel_id': channelId, 'p_episode_id': episodeId},
+    );
+    if (res is List && res.isNotEmpty) {
+      final row = Map<String, dynamic>.from(res.first as Map);
+      return ScheduleEntry(
+        id: row['schedule_id'] as String,
+        channelId: channelId,
+        episodeId: episodeId,
+        startTime: _parseRpcTimestamp(row['start_time']),
+        endTime:
+            row['end_time'] != null ? _parseRpcTimestamp(row['end_time']) : null,
+        dayOfWeek: (row['day_of_week'] as num?)?.toInt(),
+        priority: 0,
+        enabled: true,
+      );
+    }
+    return null;
+  }
+
+  /// Soonest upcoming "announcement": the channel's next one-off scheduled
+  /// program or next weekly recurrence, joined with episode + channel
+  /// display fields (see `get_next_scheduled_program`).
+  static Future<Map<String, dynamic>?> getNextScheduledProgram(
+    String channelId,
+  ) async {
+    final res = await _client.rpc(
+      'get_next_scheduled_program',
+      params: {'p_channel_id': channelId},
+    );
+    if (res is List && res.isNotEmpty) {
+      final row = Map<String, dynamic>.from(res.first as Map);
+      // Normalize timestamps to UTC instants for the UI.
+      if (row['start_time'] != null) {
+        row['start_time'] = _parseRpcTimestamp(row['start_time']);
+      }
+      if (row['end_time'] != null) {
+        row['end_time'] = _parseRpcTimestamp(row['end_time']);
+      }
+      return row;
+    }
+    return null;
+  }
+
+  static DateTime _parseRpcTimestamp(Object? raw) {
+    if (raw is String) {
+      final parsed = DateTime.tryParse(raw);
+      if (parsed != null) return parsed.toUtc();
+    }
+    return DateTime.now().toUtc();
+  }
+
+  /// Upserts a fetched playlist's videos into `episodes` (server-side,
+  /// content-manager-gated RPC from migration 007).
+  static Future<List<PlaylistImportResult>> importPlaylistVideos({
+    required String channelId,
+    required String playlistId,
+    String? defaultShowId,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    final res = await _client.rpc(
+      'import_playlist_videos',
+      params: {
+        'p_channel_id': channelId,
+        'p_playlist_id': playlistId,
+        'p_default_show_id': defaultShowId,
+        'p_items': items,
+      },
+    );
+    return (res as List)
+        .map((m) => PlaylistImportResult.fromMap(Map<String, dynamic>.from(m as Map)))
+        .toList();
+  }
+
+  /// Rewrites a channel's episode sort_order to match [episodeIds]
+  /// (admin-only RPC from migration 007).
+  static Future<void> reorderEpisodes(
+    String channelId,
+    List<String> episodeIds,
+  ) async {
+    await _client.rpc(
+      'reorder_episodes',
+      params: {'p_channel_id': channelId, 'p_episode_ids': episodeIds},
+    );
   }
 
   // ---------------------------------------------------------------
@@ -341,6 +477,36 @@ class ContentService {
     }, onConflict: 'key');
   }
 
+  /// Key of the admin-controlled "loop playback" switch. When enabled each
+  /// channel repeats its episode queue forever (last episode wraps back to
+  /// the first); when disabled playback stops after the final episode.
+  static const String loopChannelsSettingKey = 'loop_channels_enabled';
+
+  /// Reads the admin's loop-playback preference. Missing/invalid rows and
+  /// network failures fall back to `true` (looping is the default).
+  static Future<bool> getLoopChannelsEnabled() async {
+    try {
+      final settings = await getPublicSettings();
+      return parseBoolSetting(settings[loopChannelsSettingKey]) ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Coerces a JSON value from `site_settings.value` into a [bool].
+  /// Tolerates real booleans (`true`), SQL-style strings (`'true'`,
+  /// `'false'`) and numbers (`1`/`0`).
+  static bool? parseBoolSetting(Object? raw) {
+    if (raw is bool) return raw;
+    if (raw is num) return raw != 0;
+    if (raw is String) {
+      final t = raw.trim().toLowerCase();
+      if (t == 'true' || t == 'yes' || t == '1' || t == 'on') return true;
+      if (t == 'false' || t == 'no' || t == '0' || t == 'off') return false;
+    }
+    return null;
+  }
+
   // ---------------------------------------------------------------
   // Featured content
   // ---------------------------------------------------------------
@@ -356,6 +522,25 @@ class ContentService {
   // ---------------------------------------------------------------
   // Audit log convenience RPC
   // ---------------------------------------------------------------
+
+  /// Canonical UUID shape — used to keep `log_admin_action`'s
+  /// `p_entity_id uuid` argument happy. Admin flows that log about
+  /// non-row entities (settings keys, "all channels") must NOT pass a
+  /// free-form string here: PostgREST cannot cast it and the whole
+  /// request (including the real write that preceded it) looks like a
+  /// failure to the UI.
+  static final RegExp _uuidPattern = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-'
+    r'[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+
+  /// Returns [id] only when it is actually a UUID, otherwise `null`
+  /// (so the RPC falls back to its null default instead of failing).
+  static Object? _asUuidOrNull(String? id) {
+    if (id != null && _uuidPattern.hasMatch(id)) return id;
+    return null;
+  }
+
   static Future<void> logAdminAction(
     String action, {
     String? entityType,
@@ -368,7 +553,7 @@ class ContentService {
         params: {
           'p_action': action,
           'p_entity_type': entityType,
-          'p_entity_id': entityId,
+          'p_entity_id': _asUuidOrNull(entityId),
           'p_metadata': metadata ?? {},
         },
       );

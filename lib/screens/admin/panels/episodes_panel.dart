@@ -3,6 +3,7 @@ import '../../../models/channel.dart';
 import '../../../models/episode.dart';
 import '../../../models/show.dart';
 import '../../../services/content_service.dart';
+import '../../../services/playlist_import_service.dart';
 import '../../../utils/youtube_utils.dart';
 import '../../../widgets/admin/admin_shared.dart';
 import '../../../widgets/tv/youtube_screen_player.dart';
@@ -82,6 +83,68 @@ class _EpisodesPanelState extends State<EpisodesPanel> {
     if (result == true) _load();
   }
 
+  Future<void> _openPlaylistImport() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (_) => _PlaylistImportDialog(channels: _channels, shows: _shows),
+    );
+    if (result == true) _load();
+  }
+
+  /// Moves an episode one position up/down WITHIN its channel's playback
+  /// order by rewriting that channel's `sort_order` (the admin-only
+  /// `reorder_episodes` RPC). Episode order determines the continuous
+  /// channel loop sequence.
+  Future<void> _moveEpisode(Episode e, int delta) async {
+    final channelId = e.channelId;
+    if (channelId == null) {
+      if (mounted) {
+        showError(
+          context,
+          'This episode has no channel assigned. Edit it and choose a channel first.',
+        );
+      }
+      return;
+    }
+    final group = _episodes.where((x) => x.channelId == channelId).toList();
+    if (group.isEmpty) return;
+    group.sort((a, b) {
+      final sa = a.sortOrder;
+      final sb = b.sortOrder;
+      if (sa != sb) return sa.compareTo(sb);
+      final pa = a.playlistPosition ?? 1 << 30;
+      final pb = b.playlistPosition ?? 1 << 30;
+      if (pa != pb) return pa.compareTo(pb);
+      return (a.episodeNumber ?? 1 << 30).compareTo(b.episodeNumber ?? 1 << 30);
+    });
+
+    final ids = group.map((x) => x.id).toList();
+    final i = ids.indexOf(e.id);
+    if (i < 0) return;
+    final j = i + delta;
+    if (j < 0 || j >= ids.length) return;
+
+    final reordered = [...ids];
+    final tmp = reordered[i];
+    reordered[i] = reordered[j];
+    reordered[j] = tmp;
+
+    try {
+      await ContentService.reorderEpisodes(channelId, reordered);
+      await ContentService.logAdminAction(
+        'ADMIN_REORDERED_EPISODES',
+        entityType: 'episode',
+        entityId: e.id,
+        metadata: {'channel_id': channelId},
+      );
+      _load();
+    } catch (ex) {
+      if (mounted) {
+        showError(context, 'Failed to reorder. Admin access is required.');
+      }
+    }
+  }
+
   Future<void> _delete(Episode e) async {
     final ok = await confirmDialog(
       context,
@@ -144,17 +207,29 @@ class _EpisodesPanelState extends State<EpisodesPanel> {
   Widget build(BuildContext context) {
     return AdminPageScaffold(
       title: 'Episodes',
-      action: FilledButton.icon(
-        onPressed: () => _openEditor(),
-        icon: const Icon(Icons.add),
-        label: const Text('New Episode'),
+      action: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          OutlinedButton.icon(
+            onPressed: _openPlaylistImport,
+            icon: const Icon(Icons.playlist_add),
+            label: const Text('Import Playlist'),
+          ),
+          FilledButton.icon(
+            onPressed: () => _openEditor(),
+            icon: const Icon(Icons.add),
+            label: const Text('New Episode'),
+          ),
+        ],
       ),
       child: _loading
           ? const LoadingBox()
           : _error != null
           ? ErrorBox(message: _error!, onRetry: _load)
           : Card(
-              child: SingleChildScrollView(
+              child: ResponsiveTableScroll(
                 child: DataTable(
                   columns: const [
                     DataColumn(label: Text('Episode')),
@@ -195,6 +270,19 @@ class _EpisodesPanelState extends State<EpisodesPanel> {
                                 onPressed: () => _openEditor(episode: e),
                               ),
                               IconButton(
+                                icon: const Icon(Icons.arrow_upward, size: 18),
+                                tooltip: 'Move earlier in this channel\'s loop',
+                                onPressed: () => _moveEpisode(e, -1),
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.arrow_downward,
+                                  size: 18,
+                                ),
+                                tooltip: 'Move later in this channel\'s loop',
+                                onPressed: () => _moveEpisode(e, 1),
+                              ),
+                              IconButton(
                                 icon: const Icon(
                                   Icons.delete,
                                   size: 18,
@@ -219,10 +307,10 @@ class _EpisodesPanelState extends State<EpisodesPanel> {
       context: context,
       builder: (_) => Dialog(
         backgroundColor: const Color(0xFF14141A),
-        child: SizedBox(
-          width: 480,
-          height: 400,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560, maxHeight: 440),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
                 padding: const EdgeInsets.all(12),
@@ -231,6 +319,8 @@ class _EpisodesPanelState extends State<EpisodesPanel> {
                     Expanded(
                       child: Text(
                         e.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
@@ -252,15 +342,18 @@ class _EpisodesPanelState extends State<EpisodesPanel> {
               // plays automatically exactly as it will on the public TV,
               // matching the "admin add it, automatically plays" behavior.
               Expanded(
-                child: AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: ColoredBox(
-                    color: Colors.black,
-                    child: YoutubeScreenPlayer(
-                      key: ValueKey('preview-${e.id}'),
-                      videoId: e.youtubeVideoId,
-                      volume: 60,
-                      muted: false,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: ColoredBox(
+                      color: Colors.black,
+                      child: YoutubeScreenPlayer(
+                        key: ValueKey('preview-${e.id}'),
+                        videoId: e.youtubeVideoId,
+                        volume: 60,
+                        muted: false,
+                      ),
                     ),
                   ),
                 ),
@@ -592,6 +685,255 @@ class _EpisodeEditorDialogState extends State<_EpisodeEditorDialog> {
                   ),
                 ],
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlaylistImportDialog extends StatefulWidget {
+  final List<Channel> channels;
+  final List<Show> shows;
+  const _PlaylistImportDialog({required this.channels, required this.shows});
+
+  @override
+  State<_PlaylistImportDialog> createState() => _PlaylistImportDialogState();
+}
+
+class _PlaylistImportDialogState extends State<_PlaylistImportDialog> {
+  final _urlCtrl = TextEditingController();
+  String? _playlistId;
+  String? _urlError;
+  String? _channelId;
+  String? _showId;
+  bool _working = false;
+  String? _progress;
+  List<String> _errors = [];
+  int _inserted = 0;
+  int _updated = 0;
+
+  @override
+  void dispose() {
+    _urlCtrl.dispose();
+    super.dispose();
+  }
+
+  void _validateUrl(String value) {
+    final id = YoutubeUtils.extractPlaylistId(value);
+    setState(() {
+      _playlistId = id;
+      _urlError = id == null && value.trim().isNotEmpty
+          ? 'Enter a YouTube playlist URL or a valid playlist ID '
+                '(starts with PL..., like "PLabc123...")'
+          : null;
+    });
+  }
+
+  Future<void> _import() async {
+    final playlistId = _playlistId;
+    final channelId = _channelId;
+    if (playlistId == null) {
+      showError(context, 'Please enter a valid YouTube playlist URL/ID.');
+      return;
+    }
+    if (channelId == null) {
+      showError(context, 'Please pick the channel these episodes belong to.');
+      return;
+    }
+    setState(() {
+      _working = true;
+      _errors = [];
+      _progress = 'Fetching playlist…';
+    });
+    try {
+      final items = await PlaylistImportService.fetchPlaylist(playlistId);
+      if (!mounted) return;
+      setState(() => _progress = 'Importing ${items.length} videos…');
+      final results = await ContentService.importPlaylistVideos(
+        channelId: channelId,
+        playlistId: playlistId,
+        defaultShowId: _showId,
+        items: items,
+      );
+      await ContentService.logAdminAction(
+        'ADMIN_IMPORTED_PLAYLIST',
+        entityType: 'episode',
+        metadata: {
+          'playlist_id': playlistId,
+          'channel_id': channelId,
+          'total': results.length,
+        },
+      );
+      if (!mounted) return;
+      _inserted = results.where((r) => r.inserted).length;
+      _updated = results.where((r) => !r.inserted && r.error == null).length;
+      _errors = results
+          .where((r) => r.error != null)
+          .map((r) => '• ${r.title ?? 'Video'} — ${r.error}')
+          .take(5)
+          .toList();
+      setState(() {
+        _working = false;
+        _progress = null;
+      });
+      if (_errors.isEmpty) {
+        showSuccess(
+          context,
+          'Imported ${results.length} videos '
+          '($_inserted new, $_updated updated).',
+        );
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _working = false;
+        _progress = null;
+      });
+      showError(context, e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Import YouTube Playlist',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Re-importing a playlist keeps it perfectly in sync: new '
+                  'videos are added, existing ones updated, and runners '
+                  'continue from where they left off. Videos play in '
+                  'playlist order on their channel.',
+                  style: TextStyle(color: Colors.white54, fontSize: 11),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _urlCtrl,
+                  onChanged: _validateUrl,
+                  decoration: InputDecoration(
+                    labelText: 'Playlist URL or Playlist ID',
+                    helperText: _playlistId != null
+                        ? 'Detected playlist ID: $_playlistId'
+                        : 'Example: https://www.youtube.com/playlist?list=PL…',
+                    errorText: _urlError,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: _channelId,
+                  decoration: const InputDecoration(labelText: 'Channel *'),
+                  items: widget.channels
+                      .map(
+                        (c) => DropdownMenuItem(
+                          value: c.id,
+                          child: Text('${c.channelNumber} — ${c.name}'),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) => setState(() => _channelId = v),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: _showId,
+                  decoration: const InputDecoration(
+                    labelText: 'Show (optional)',
+                  ),
+                  items: [
+                    const DropdownMenuItem<String>(
+                      value: null,
+                      child: Text('No show'),
+                    ),
+                    ...widget.shows.map(
+                      (s) =>
+                          DropdownMenuItem(value: s.id, child: Text(s.title)),
+                    ),
+                  ],
+                  onChanged: (v) => setState(() => _showId = v),
+                ),
+                const SizedBox(height: 16),
+                if (_progress != null) ...[
+                  Row(
+                    children: [
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(_progress!)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                if (_errors.isNotEmpty) ...[
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.redAccent),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Some videos were skipped:',
+                          style: TextStyle(
+                            color: Colors.redAccent,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        ..._errors.map(
+                          (e) => Padding(
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: Text(
+                              e,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: _working
+                          ? null
+                          : () => Navigator.of(context).pop(false),
+                      child: const Text('Cancel'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      onPressed: _working ? null : _import,
+                      icon: const Icon(Icons.download),
+                      label: Text(_working ? 'Importing…' : 'Import'),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),

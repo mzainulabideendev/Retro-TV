@@ -6,11 +6,12 @@ import '../../services/tv_state.dart';
 import '../../widgets/tv/crt_tv_frame.dart';
 import '../../widgets/tv/tv_controls.dart';
 import '../../widgets/tv/channel_guide.dart';
+import '../../widgets/tv/next_up_card.dart';
 import '../../widgets/tv/tv_style_selector.dart';
 import '../../widgets/tv/youtube_screen_player.dart';
 import '../admin/admin_login_screen.dart';
 import 'about_screen.dart';
-import 'fullscreen_tv_screen.dart';
+import '../../widgets/tv/fullscreen_tv_view.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,17 +26,58 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _showVolumeOsd = false;
   Timer? _osdTimer;
 
+  TvState? _tv;
+
+  /// The single youtube player instance is shared between the small CRT
+  /// screen and the fullscreen view. Reparenting it through this key (with
+  /// the GlobalKey) keeps playback running uninterrupted across both modes
+  /// instead of creating a second player that plays alongside the first.
+  final GlobalKey _playerKey = GlobalKey();
+
+  /// Playback position (ms) reported by whichever player surface is active.
+  /// Handed back to the next surface (small screen <-> fullscreen) so the
+  /// video continues at the same time & duration instead of restarting.
+  int _lastPlayerPositionMs = 0;
+
+  /// Tracks the program the saved position belongs to — any position travels
+  /// only within one episode and resets to 0 when the episode changes.
+  String? _lastProgramId;
+
+  void _syncProgramPosition(TvState tv) {
+    final programId = tv.currentProgram?.id;
+    if (programId != _lastProgramId) {
+      _lastProgramId = programId;
+      _lastPlayerPositionMs = 0;
+    }
+  }
+
+  void _capturePlayerPosition(int ms) {
+    _lastPlayerPositionMs = ms;
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<TvState>().initialize();
+      final tv = context.read<TvState>();
+      _tv = tv;
+      tv.addListener(_syncFullscreenSystemUi);
+      tv.initialize();
       _focusNode.requestFocus();
     });
   }
 
+  void _syncFullscreenSystemUi() {
+    final tv = _tv;
+    if (tv == null) return;
+    SystemChrome.setEnabledSystemUIMode(
+      tv.fullscreen ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+    );
+  }
+
   @override
   void dispose() {
+    _tv?.removeListener(_syncFullscreenSystemUi);
     _focusNode.dispose();
     _osdTimer?.cancel();
     super.dispose();
@@ -77,7 +119,12 @@ class _HomeScreenState extends State<HomeScreen> {
         _flashVolumeOsd();
         break;
       case LogicalKeyboardKey.keyF:
-        _openFullscreen(tv);
+      case LogicalKeyboardKey.escape:
+        if (tv.fullscreen) {
+          tv.setFullscreen(false);
+        } else {
+          _openFullscreen(tv);
+        }
         break;
       case LogicalKeyboardKey.keyP:
         tv.togglePower();
@@ -109,33 +156,35 @@ class _HomeScreenState extends State<HomeScreen> {
     return map[key];
   }
 
-  Future<void> _openFullscreen(TvState tv) async {
+  void _openFullscreen(TvState tv) {
     if (!tv.isOn) return;
     tv.setFullscreen(true);
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const FullscreenTvScreen(),
-        fullscreenDialog: true,
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<TvState>(
       builder: (context, tv, _) {
-        return KeyboardListener(
-          focusNode: _focusNode,
-          autofocus: true,
-          onKeyEvent: (e) => _handleKey(e, tv),
-          child: Scaffold(
-            backgroundColor: const Color(0xFF0D0D10),
-            body: SafeArea(
-              child: tv.loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : tv.error != null
-                  ? _buildError(tv)
-                  : _buildContent(context, tv),
+        return PopScope(
+          canPop: !(tv.fullscreen && tv.isOn),
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && tv.fullscreen) tv.setFullscreen(false);
+          },
+          child: KeyboardListener(
+            focusNode: _focusNode,
+            autofocus: true,
+            onKeyEvent: (e) => _handleKey(e, tv),
+            child: Scaffold(
+              backgroundColor: const Color(0xFF0D0D10),
+              body: SafeArea(
+                child: tv.loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : tv.error != null
+                    ? _buildError(tv)
+                    : tv.fullscreen && tv.isOn
+                    ? _buildFullscreenLayout(context, tv)
+                    : _buildContent(context, tv),
+              ),
             ),
           ),
         );
@@ -191,9 +240,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onSelect: tv.selectStyle,
           ),
           const SizedBox(height: 16),
-          GestureDetector(
-            onDoubleTap: () => _openFullscreen(tv),
-            child: CrtTvFrame(
+          CrtTvFrame(
               style: style,
               poweredOn: tv.isOn,
               startingUp: tv.power == PowerState.startingUp,
@@ -207,16 +254,25 @@ class _HomeScreenState extends State<HomeScreen> {
               showVolumeOsd: _showVolumeOsd,
               screenChild: _buildScreenContent(tv),
             ),
-          ),
           const SizedBox(height: 8),
           Text(
-            'Tip: double-tap the screen (or press F) for fullscreen',
+            'Tip: use the remote controls (or press F) for fullscreen',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.3),
               fontSize: 11,
             ),
           ),
           const SizedBox(height: 12),
+          if (tv.isOn &&
+              tv.currentChannel != null &&
+              (tv.upNext != null || tv.nextScheduledProgram != null)) ...[
+            NextUpCard(
+              upNext: tv.upNext,
+              announcement: tv.nextScheduledProgram,
+              accentColor: style.accentColor,
+            ),
+            const SizedBox(height: 12),
+          ],
           _buildProgramInfo(tv, style),
           const SizedBox(height: 16),
           ConstrainedBox(
@@ -306,6 +362,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildScreenContent(TvState tv) {
+    _syncProgramPosition(tv);
     if (!tv.isOn || tv.power != PowerState.on) {
       return const SizedBox.shrink();
     }
@@ -326,12 +383,60 @@ class _HomeScreenState extends State<HomeScreen> {
     // Video plays automatically — no user interaction required. Autoplay
     // is guaranteed via a muted-start-then-auto-unmute strategy inside
     // YoutubeScreenPlayer, so every episode added by an admin starts
-    // playing the instant its channel is tuned in.
+    // playing the instant its channel is tuned in. The player is the
+    // SAME shared instance used by fullscreen (see [_playerKey]); should
+    // the surface be recreated instead of reparented, it resumes from
+    // [_lastPlayerPositionMs] so the video does not restart at 0:00.
     return YoutubeScreenPlayer(
-      key: ValueKey(program.id),
+      key: _playerKey,
       videoId: program.youtubeVideoId,
       volume: tv.effectiveVolume,
       muted: tv.muted,
+      initialPositionMs: _lastPlayerPositionMs,
+      onPositionChanged: _capturePlayerPosition,
+      onEnded: tv.onProgramEnded,
+      onUnavailable: tv.onProgramUnavailable,
+    );
+  }
+
+  Widget _buildFullscreenLayout(BuildContext context, TvState tv) {
+    return FullscreenTvView(
+      tv: tv,
+      screen: _buildFullscreenScreen(tv),
+      onExit: () => tv.setFullscreen(false),
+    );
+  }
+
+  Widget _buildFullscreenScreen(TvState tv) {
+    _syncProgramPosition(tv);
+    if (!tv.isOn || tv.power != PowerState.on) {
+      return const SizedBox.shrink();
+    }
+    if (tv.channelChanging) {
+      return const SizedBox.shrink();
+    }
+    final program = tv.currentProgram;
+    if (program == null) {
+      return Container(
+        color: Colors.black,
+        alignment: Alignment.center,
+        child: const Text(
+          'Channel unavailable.',
+          style: TextStyle(color: Colors.white54, fontSize: 12),
+        ),
+      );
+    }
+    // Same shared instance as the small screen — no second player, so the
+    // video continues from its current position instead of starting over.
+    // If the platform rebuilds the player surface on the swap, it seeks to
+    // [_lastPlayerPositionMs] first and keeps the same time & duration.
+    return YoutubeScreenPlayer(
+      key: _playerKey,
+      videoId: program.youtubeVideoId,
+      volume: tv.effectiveVolume,
+      muted: tv.muted,
+      initialPositionMs: _lastPlayerPositionMs,
+      onPositionChanged: _capturePlayerPosition,
       onEnded: tv.onProgramEnded,
       onUnavailable: tv.onProgramUnavailable,
     );

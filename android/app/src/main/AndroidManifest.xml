@@ -37,6 +37,13 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Impeller is disabled because this project sits under a long Windows
+             path (over the 260-char MAX_PATH limit) which breaks Impeller's
+             shader compiler at build time. Rendering falls back to Skia, which
+             is fully supported. -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

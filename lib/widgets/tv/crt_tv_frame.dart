@@ -260,7 +260,9 @@ class CrtTvFrame extends StatelessWidget {
               fit: StackFit.expand,
               children: [
                 ColoredBox(color: style.screenTint.withValues(alpha: 0.06)),
-                screenChild,
+                // Inert picture: touching the screen can never skip, pause,
+                // or bring up the embedded player's own controls.
+                AbsorbPointer(child: screenChild),
                 StaticNoise(active: channelChanging),
                 CrtOverlay(
                   scanlineOpacity: reduceEffects

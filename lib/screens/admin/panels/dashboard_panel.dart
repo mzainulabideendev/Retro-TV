@@ -61,14 +61,24 @@ class _DashboardPanelState extends State<DashboardPanel> {
           ? const LoadingBox()
           : _error != null
           ? ErrorBox(message: _error!, onRetry: _load)
-          : GridView.count(
-              crossAxisCount: 4,
-              childAspectRatio: 1.6,
-              mainAxisSpacing: 16,
-              crossAxisSpacing: 16,
-              children: _stats.entries
-                  .map((e) => _StatCard(label: e.key, value: e.value))
-                  .toList(),
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth;
+                final columns = width >= 900
+                    ? 4
+                    : width >= 600
+                    ? 3
+                    : 2;
+                return GridView.count(
+                  crossAxisCount: columns,
+                  childAspectRatio: width < 600 ? 1.4 : 1.6,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                  children: _stats.entries
+                      .map((e) => _StatCard(label: e.key, value: e.value))
+                      .toList(),
+                );
+              },
             ),
     );
   }

@@ -51,26 +51,61 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final isAdmin = profile.isAdminOrAbove;
     final isSuperAdmin = profile.isSuperAdmin;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F5F7),
-      body: Row(
-        children: [
-          _Sidebar(
-            current: _section,
-            isAdmin: isAdmin,
-            isSuperAdmin: isSuperAdmin,
-            onSelect: (s) => setState(() => _section = s),
-            onLogout: () async {
-              await auth.signOut();
-              if (!context.mounted) return;
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => const HomeScreen()),
-              );
-            },
+    final sidebar = _Sidebar(
+      current: _section,
+      isAdmin: isAdmin,
+      isSuperAdmin: isSuperAdmin,
+      onSelect: (s) => setState(() => _section = s),
+      onLogout: () async {
+        await auth.signOut();
+        if (!context.mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+        );
+      },
+    );
+
+    // Responsive shell: wide screens get the classic sidebar + content two
+    // pane layout; narrow screens (phones) collapse the navigation into a
+    // drawer so the content panels never get squeezed and overflow.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 840;
+        if (wide) {
+          return Scaffold(
+            backgroundColor: const Color(0xFFF4F5F7),
+            body: Row(
+              children: [
+                SizedBox(width: 220, child: sidebar),
+                Expanded(child: _buildPanel(profile)),
+              ],
+            ),
+          );
+        }
+        return Scaffold(
+          backgroundColor: const Color(0xFFF4F5F7),
+          appBar: AppBar(
+            backgroundColor: const Color(0xFF1C1C26),
+            elevation: 0,
+            leading: Builder(
+              builder: (context) => IconButton(
+                icon: const Icon(Icons.menu, color: Colors.white),
+                onPressed: () => Scaffold.of(context).openDrawer(),
+              ),
+            ),
+            title: const Text(
+              'Retro TV Admin',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
-          Expanded(child: _buildPanel(profile)),
-        ],
-      ),
+          drawer: Drawer(child: sidebar),
+          body: _buildPanel(profile),
+        );
+      },
     );
   }
 
@@ -131,7 +166,8 @@ class _Sidebar extends StatelessWidget {
     ];
 
     return Container(
-      width: 220,
+      // Fills whatever width the parent gives it (the fixed 220px sidebar
+      // on wide layouts, or the full-width drawer on narrow layouts).
       color: const Color(0xFF1C1C26),
       child: Column(
         children: [

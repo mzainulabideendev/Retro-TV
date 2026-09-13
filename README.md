@@ -129,7 +129,7 @@ supabase/
 | Local persistence | `shared_preferences` |
 | Utilities | `url_launcher`, `wakelock_plus`, `uuid`, `http` |
 
-**Key packages:** `supabase_flutter 2.6.0`, `provider 6.1.5+1`, `youtube_player_iframe 5.2.0`, `shared_preferences 2.5.3`, `wakelock_plus 1.2.10`, `url_launcher 6.3.1`, `uuid 4.5.1`
+**Key packages:** `supabase_flutter 2.6.0`, `provider 6.1.5+1`, `youtube_player_iframe 6.0.2`, `shared_preferences 2.5.3`, `wakelock_plus 1.2.10`, `url_launcher 6.3.2`, `uuid 4.5.1`
 
 ## 🚀 Getting Started
 
