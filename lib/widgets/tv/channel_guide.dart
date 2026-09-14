@@ -5,6 +5,12 @@ import '../../services/content_service.dart';
 
 /// Electronic program guide: lists all channels with their current
 /// (and best-effort next) program. Tapping a row switches the TV to it.
+///
+/// Performance: all channel programs are fetched in parallel via
+/// [ContentService.getCurrentProgramsForChannels] so the guide opens
+/// instantly even with dozens of channels. The channel list renders
+/// immediately with "Loading..." placeholders that update as each
+/// program resolves.
 class ChannelGuide extends StatefulWidget {
   final List<Channel> channels;
   final void Function(Channel) onSelect;
@@ -23,7 +29,7 @@ class ChannelGuide extends StatefulWidget {
 
 class _ChannelGuideState extends State<ChannelGuide> {
   final Map<String, Episode?> _nowPlaying = {};
-  bool _loading = true;
+  bool _programsLoaded = false;
 
   @override
   void initState() {
@@ -32,15 +38,13 @@ class _ChannelGuideState extends State<ChannelGuide> {
   }
 
   Future<void> _loadPrograms() async {
-    for (final c in widget.channels) {
-      try {
-        final ep = await ContentService.getCurrentProgram(c.id);
-        _nowPlaying[c.id] = ep;
-      } catch (_) {
-        _nowPlaying[c.id] = null;
-      }
-    }
-    if (mounted) setState(() => _loading = false);
+    final results =
+        await ContentService.getCurrentProgramsForChannels(widget.channels);
+    if (!mounted) return;
+    setState(() {
+      _nowPlaying.addAll(results);
+      _programsLoaded = true;
+    });
   }
 
   @override
@@ -75,61 +79,59 @@ class _ChannelGuideState extends State<ChannelGuide> {
           ),
           const Divider(color: Colors.white12, height: 1),
           Flexible(
-            child: _loading
-                ? const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                : ListView.separated(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    itemCount: widget.channels.length,
-                    separatorBuilder: (_, __) =>
-                        const Divider(color: Colors.white10, height: 1),
-                    itemBuilder: (context, i) {
-                      final c = widget.channels[i];
-                      final program = _nowPlaying[c.id];
-                      return ListTile(
-                        dense: true,
-                        leading: Container(
-                          width: 34,
-                          height: 34,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: Colors.black26,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            c.channelNumber.toString().padLeft(2, '0'),
-                            style: TextStyle(
-                              color: widget.accentColor,
-                              fontWeight: FontWeight.bold,
-                              fontFamily: 'monospace',
-                            ),
-                          ),
-                        ),
-                        title: Text(
-                          c.name,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                        subtitle: Text(
-                          program != null
-                              ? 'NOW: ${program.title}'
-                              : 'NOW: Off-air',
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 11,
-                          ),
-                        ),
-                        enabled: c.enabled,
-                        onTap: c.enabled ? () => widget.onSelect(c) : null,
-                      );
-                    },
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              itemCount: widget.channels.length,
+              separatorBuilder: (_, __) =>
+                  const Divider(color: Colors.white10, height: 1),
+              itemBuilder: (context, i) {
+                final c = widget.channels[i];
+                final program = _nowPlaying[c.id];
+                final subtitle = !_programsLoaded
+                    ? 'NOW: Loading...'
+                    : program != null
+                        ? 'NOW: ${program.title}'
+                        : 'NOW: Off-air';
+                return ListTile(
+                  dense: true,
+                  leading: Container(
+                    width: 34,
+                    height: 34,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.black26,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      c.channelNumber.toString().padLeft(2, '0'),
+                      style: TextStyle(
+                        color: widget.accentColor,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
                   ),
+                  title: Text(
+                    c.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                  subtitle: Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: Colors.white54,
+                      fontSize: 11,
+                    ),
+                  ),
+                  enabled: c.enabled,
+                  onTap: c.enabled ? () => widget.onSelect(c) : null,
+                );
+              },
+            ),
           ),
         ],
       ),

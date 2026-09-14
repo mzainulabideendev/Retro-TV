@@ -389,6 +389,26 @@ class ContentService {
     return null;
   }
 
+  /// Fetches the current program for every channel in parallel.
+  /// Returns a map of channelId -> Episode (null if off-air or on error).
+  /// This is dramatically faster than calling [getCurrentProgram] in a loop
+  /// because all RPC calls fire concurrently.
+  static Future<Map<String, Episode?>> getCurrentProgramsForChannels(
+    List<Channel> channels,
+  ) async {
+    final results = await Future.wait(
+      channels.map((c) async {
+        try {
+          final ep = await getCurrentProgram(c.id);
+          return MapEntry<String, Episode?>(c.id, ep);
+        } catch (_) {
+          return MapEntry<String, Episode?>(c.id, null);
+        }
+      }),
+    );
+    return Map<String, Episode?>.fromEntries(results);
+  }
+
   // ---------------------------------------------------------------
   // Playback program queue / Up Next (migration 007 RPCs)
   // ---------------------------------------------------------------
