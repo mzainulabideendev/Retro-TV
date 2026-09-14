@@ -3,11 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../services/tv_state.dart';
+import '../../widgets/tv/crt_overlay.dart';
 import '../../widgets/tv/crt_tv_frame.dart';
 import '../../widgets/tv/tv_controls.dart';
 import '../../widgets/tv/channel_guide.dart';
 import '../../widgets/tv/next_up_card.dart';
 import '../../widgets/tv/tv_style_selector.dart';
+import '../../widgets/tv/tv_filter_selector.dart';
+import '../../widgets/tv/tv_loading_view.dart';
 import '../../widgets/tv/youtube_screen_player.dart';
 import '../admin/admin_login_screen.dart';
 import 'about_screen.dart';
@@ -178,7 +181,7 @@ class _HomeScreenState extends State<HomeScreen> {
               backgroundColor: const Color(0xFF0D0D10),
               body: SafeArea(
                 child: tv.loading
-                    ? const Center(child: CircularProgressIndicator())
+                    ? const TvLoadingView()
                     : tv.error != null
                     ? _buildError(tv)
                     : tv.fullscreen && tv.isOn
@@ -239,6 +242,21 @@ class _HomeScreenState extends State<HomeScreen> {
             selected: tv.currentStyle,
             onSelect: tv.selectStyle,
           ),
+          const SizedBox(height: 12),
+          Text(
+            'SCREEN FILTER',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.4),
+              fontSize: 10,
+              letterSpacing: 2,
+            ),
+          ),
+          const SizedBox(height: 6),
+          TvFilterSelector(
+            selected: tv.screenFilter,
+            accentColor: style.accentColor,
+            onSelect: tv.selectScreenFilter,
+          ),
           const SizedBox(height: 16),
           CrtTvFrame(
               style: style,
@@ -246,6 +264,7 @@ class _HomeScreenState extends State<HomeScreen> {
               startingUp: tv.power == PowerState.startingUp,
               channelChanging: tv.channelChanging,
               reduceEffects: tv.reduceEffects,
+              screenFilter: tv.screenFilter,
               channelNumber: tv.currentChannel?.channelNumber ?? 0,
               channelName: tv.currentChannel?.name ?? '',
               digitBuffer: tv.digitBuffer,
@@ -396,6 +415,7 @@ class _HomeScreenState extends State<HomeScreen> {
       onPositionChanged: _capturePlayerPosition,
       onEnded: tv.onProgramEnded,
       onUnavailable: tv.onProgramUnavailable,
+      crtOverlay: _buildCrtOverlay(tv),
     );
   }
 
@@ -439,6 +459,25 @@ class _HomeScreenState extends State<HomeScreen> {
       onPositionChanged: _capturePlayerPosition,
       onEnded: tv.onProgramEnded,
       onUnavailable: tv.onProgramUnavailable,
+      crtOverlay: _buildCrtOverlay(tv),
+    );
+  }
+
+  /// Builds the CRT screen picture filter overlay. This is passed to the
+  /// shared [YoutubeScreenPlayer] which renders it through the YouTube
+  /// plugin's [YoutubePlayer.controlsBuilder] — placing it INSIDE the
+  /// plugin's overlay layer, above the WebView, on every platform. (A copy
+  /// of the old frame-level overlay would be invisible on Android/iOS.)
+  CrtOverlay _buildCrtOverlay(TvState tv) {
+    final style = tv.currentStyle;
+    return CrtOverlay(
+      scanlineOpacity: tv.reduceEffects
+          ? 0.06
+          : (style?.scanlineOpacity ?? 0.15),
+      glowColor: style?.glowColor ?? Colors.cyanAccent,
+      reduceMotion: tv.reduceEffects,
+      enabled: true,
+      filter: tv.screenFilter,
     );
   }
 

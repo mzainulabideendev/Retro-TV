@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../models/screen_filter.dart';
 import '../../models/tv_style.dart';
-import 'crt_overlay.dart';
 import 'static_noise.dart';
 
 /// The realistic retro CRT television frame: bezel, curved screen,
@@ -15,6 +15,7 @@ class CrtTvFrame extends StatelessWidget {
   final bool startingUp;
   final bool channelChanging;
   final bool reduceEffects;
+  final ScreenFilter screenFilter;
   final int channelNumber;
   final String channelName;
   final String digitBuffer;
@@ -30,6 +31,7 @@ class CrtTvFrame extends StatelessWidget {
     required this.startingUp,
     required this.channelChanging,
     required this.reduceEffects,
+    this.screenFilter = ScreenFilter.scanlines,
     required this.channelNumber,
     required this.channelName,
     this.digitBuffer = '',
@@ -262,16 +264,10 @@ class CrtTvFrame extends StatelessWidget {
                 ColoredBox(color: style.screenTint.withValues(alpha: 0.06)),
                 // Inert picture: touching the screen can never skip, pause,
                 // or bring up the embedded player's own controls.
-                AbsorbPointer(child: screenChild),
-                StaticNoise(active: channelChanging),
-                CrtOverlay(
-                  scanlineOpacity: reduceEffects
-                      ? style.scanlineOpacity * 0.3
-                      : style.scanlineOpacity,
-                  glowColor: style.glowColor,
-                  reduceMotion: reduceEffects,
-                  enabled: true,
+                AbsorbPointer(
+                  child: _applyColorGrade(screenChild),
                 ),
+                StaticNoise(active: channelChanging),
               ],
             ),
           // Glass glare: diagonal light streak overlay for a "real glass"
@@ -295,6 +291,21 @@ class CrtTvFrame extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  /// Applies the filter's exact color grade to Flutter-rendered picture
+  /// content. The YouTube iframe is an external platform view that Flutter
+  /// cannot repaint, so a matching translucent tint wash is layered on top
+  /// by the CrtOverlay rendered inside the player itself (see
+  /// YoutubeScreenPlayer.crtOverlay) — the vintage grade reads the same
+  /// everywhere.
+  Widget _applyColorGrade(Widget child) {
+    final matrix = screenFilter.matrix;
+    if (matrix == null) return child;
+    return ColorFiltered(
+      colorFilter: ColorFilter.matrix(matrix),
+      child: child,
     );
   }
 

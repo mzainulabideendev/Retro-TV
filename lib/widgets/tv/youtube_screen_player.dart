@@ -61,6 +61,12 @@ class YoutubeScreenPlayer extends StatefulWidget {
   final VoidCallback? onEnded;
   final void Function(String reason)? onUnavailable;
 
+  /// CRT overlay widget rendered via the player's [controlsBuilder], which
+  /// on mobile places it inside the [OverlayPortal] layer — above the
+  /// WebView. Without this, Flutter widgets in the regular tree sit below
+  /// the WebView overlay on Android/iOS and the filter effects are invisible.
+  final Widget? crtOverlay;
+
   const YoutubeScreenPlayer({
     super.key,
     required this.videoId,
@@ -70,6 +76,7 @@ class YoutubeScreenPlayer extends StatefulWidget {
     this.onPositionChanged,
     this.onEnded,
     this.onUnavailable,
+    this.crtOverlay,
   });
 
   @override
@@ -479,9 +486,23 @@ class _YoutubeScreenPlayerState extends State<YoutubeScreenPlayer> {
     // AbsorbPointer: the on-screen TV is a "watch only" appliance — we
     // don't want viewers accidentally opening YouTube's own gesture
     // menu/context actions inside our CRT screen illusion.
+    //
+    // controlsBuilder: on mobile the plugin renders the WebView in an
+    // OverlayPortal that sits above all regular Flutter widgets. Passing
+    // the CRT overlay as controlsBuilder places it INSIDE that same
+    // overlay layer — above the WebView — so filter effects (scanlines,
+    // tint, VHS, static, dots) are visible on Android/iOS devices.
     return AbsorbPointer(
       absorbing: true,
-      child: YoutubePlayer(controller: _controller, aspectRatio: 4 / 3),
+      child: YoutubePlayer(
+        controller: _controller,
+        aspectRatio: 4 / 3,
+        controlsBuilder: widget.crtOverlay != null
+            ? (context, isFullscreen) => IgnorePointer(
+                  child: widget.crtOverlay,
+                )
+            : null,
+      ),
     );
   }
 }

@@ -20,17 +20,46 @@ class ContentService {
   static final _client = SupabaseService.client;
 
   // ---------------------------------------------------------------
+  // In-memory read cache
+  // ---------------------------------------------------------------
+
+  /// Small TTL cache for frequently-read reference data (channels, styles,
+  /// categories, settings, episodes). Returning the cached copy avoids a
+  /// network round-trip on repeat reads (retries, channel re-tuning,
+  /// refreshChannels), which is the biggest driver of the "slow to load"
+  /// feeling. Writes invalidate the affected family. Live broadcast data
+  /// (current program, program queue, schedule RPCs) is deliberately NOT
+  /// cached so playback stays correct.
+  static final Map<String, _CachedValue> _cache = {};
+  static const Duration _cacheTtl = Duration(seconds: 30);
+
+  static Future<T> _cached<T>(String key, Future<T> Function() loader) async {
+    final hit = _cache[key];
+    if (hit != null && !hit.isExpired) return hit.value as T;
+    final value = await loader();
+    _cache[key] = _CachedValue(value, DateTime.now().add(_cacheTtl));
+    return value;
+  }
+
+  static void _invalidate(String prefix) {
+    _cache.removeWhere((key, _) => key.startsWith(prefix));
+  }
+
+  // ---------------------------------------------------------------
   // TV Styles
   // ---------------------------------------------------------------
   static Future<List<TvStyle>> getTvStyles({bool onlyEnabled = true}) async {
-    var query = _client.from('tv_styles').select();
-    if (onlyEnabled) query = query.eq('enabled', true);
-    final res = await query.order('sort_order');
-    return (res as List).map((m) => TvStyle.fromMap(m)).toList();
+    return _cached('tv_styles:$onlyEnabled', () async {
+      var query = _client.from('tv_styles').select();
+      if (onlyEnabled) query = query.eq('enabled', true);
+      final res = await query.order('sort_order');
+      return (res as List).map((m) => TvStyle.fromMap(m)).toList();
+    });
   }
 
   static Future<void> createTvStyle(TvStyle style) async {
     await _client.from('tv_styles').insert(style.toInsertMap());
+    _invalidate('tv_styles');
   }
 
   static Future<void> updateTvStyle(
@@ -38,24 +67,29 @@ class ContentService {
     Map<String, dynamic> patch,
   ) async {
     await _client.from('tv_styles').update(patch).eq('id', id);
+    _invalidate('tv_styles');
   }
 
   static Future<void> deleteTvStyle(String id) async {
     await _client.from('tv_styles').delete().eq('id', id);
+    _invalidate('tv_styles');
   }
 
   // ---------------------------------------------------------------
   // Categories
   // ---------------------------------------------------------------
   static Future<List<Category>> getCategories({bool onlyEnabled = true}) async {
-    var query = _client.from('categories').select();
-    if (onlyEnabled) query = query.eq('enabled', true);
-    final res = await query.order('sort_order');
-    return (res as List).map((m) => Category.fromMap(m)).toList();
+    return _cached('categories:$onlyEnabled', () async {
+      var query = _client.from('categories').select();
+      if (onlyEnabled) query = query.eq('enabled', true);
+      final res = await query.order('sort_order');
+      return (res as List).map((m) => Category.fromMap(m)).toList();
+    });
   }
 
   static Future<void> createCategory(Category c) async {
     await _client.from('categories').insert(c.toInsertMap());
+    _invalidate('categories');
   }
 
   static Future<void> updateCategory(
@@ -63,20 +97,24 @@ class ContentService {
     Map<String, dynamic> patch,
   ) async {
     await _client.from('categories').update(patch).eq('id', id);
+    _invalidate('categories');
   }
 
   static Future<void> deleteCategory(String id) async {
     await _client.from('categories').delete().eq('id', id);
+    _invalidate('categories');
   }
 
   // ---------------------------------------------------------------
   // Channels
   // ---------------------------------------------------------------
   static Future<List<Channel>> getChannels({bool onlyEnabled = true}) async {
-    var query = _client.from('channels').select();
-    if (onlyEnabled) query = query.eq('enabled', true);
-    final res = await query.order('channel_number');
-    return (res as List).map((m) => Channel.fromMap(m)).toList();
+    return _cached('channels:$onlyEnabled', () async {
+      var query = _client.from('channels').select();
+      if (onlyEnabled) query = query.eq('enabled', true);
+      final res = await query.order('channel_number');
+      return (res as List).map((m) => Channel.fromMap(m)).toList();
+    });
   }
 
   static Future<Channel?> getChannelByNumber(int number) async {
@@ -95,6 +133,7 @@ class ContentService {
           .insert(c.toInsertMap())
           .select('id')
           .single();
+      _invalidate('channels');
       return res['id'] as String;
     } on PostgrestException catch (e) {
       if (e.code == '23505') {
@@ -110,6 +149,7 @@ class ContentService {
   ) async {
     try {
       await _client.from('channels').update(patch).eq('id', id);
+      _invalidate('channels');
     } on PostgrestException catch (e) {
       if (e.code == '23505') {
         throw Exception('Channel number or slug already exists.');
@@ -120,6 +160,7 @@ class ContentService {
 
   static Future<void> deleteChannel(String id) async {
     await _client.from('channels').delete().eq('id', id);
+    _invalidate('channels');
   }
 
   /// Applies a single loop-playback value to EVERY channel, so an admin can
@@ -131,6 +172,7 @@ class ContentService {
         .from('channels')
         .update({'loop_playback': enabled})
         .neq('id', '00000000-0000-0000-0000-000000000000');
+    _invalidate('channels');
   }
 
   // ---------------------------------------------------------------
@@ -183,12 +225,15 @@ class ContentService {
   }
 
   static Future<Episode?> getEpisodeById(String id) async {
-    final res = await _client
-        .from('episodes')
-        .select()
-        .eq('id', id)
-        .maybeSingle();
-    return res != null ? Episode.fromMap(res) : null;
+    if (id.isEmpty) return null;
+    return _cached('episode:$id', () async {
+      final res = await _client
+          .from('episodes')
+          .select()
+          .eq('id', id)
+          .maybeSingle();
+      return res != null ? Episode.fromMap(res) : null;
+    });
   }
 
   static Future<String> createEpisode(Episode e) async {
@@ -199,6 +244,7 @@ class ContentService {
           .select('id')
           .single();
       final id = res['id'] as String;
+      _invalidate('episodes');
       await _maybeSetAsChannelDefault(
         channelId: e.channelId,
         enabled: e.enabled,
@@ -219,6 +265,7 @@ class ContentService {
     Map<String, dynamic> patch,
   ) async {
     await _client.from('episodes').update(patch).eq('id', id);
+    _invalidate('episodes');
     // If this episode is (still) assigned to a channel and is
     // published/enabled, make sure it's actually wired up as that
     // channel's now-playing program — otherwise an admin can add/edit an
@@ -267,6 +314,7 @@ class ContentService {
 
   static Future<void> deleteEpisode(String id) async {
     await _client.from('episodes').delete().eq('id', id);
+    _invalidate('episodes');
   }
 
   // ---------------------------------------------------------------
@@ -454,15 +502,17 @@ class ContentService {
   // Site settings
   // ---------------------------------------------------------------
   static Future<Map<String, dynamic>> getPublicSettings() async {
-    final res = await _client
-        .from('site_settings')
-        .select()
-        .eq('is_public', true);
-    final Map<String, dynamic> out = {};
-    for (final row in (res as List)) {
-      out[row['key'] as String] = row['value'];
-    }
-    return out;
+    return _cached('site_settings', () async {
+      final res = await _client
+          .from('site_settings')
+          .select()
+          .eq('is_public', true);
+      final Map<String, dynamic> out = {};
+      for (final row in (res as List)) {
+        out[row['key'] as String] = row['value'];
+      }
+      return out;
+    });
   }
 
   static Future<void> upsertSetting(
@@ -475,6 +525,7 @@ class ContentService {
       'value': value,
       'is_public': isPublic,
     }, onConflict: 'key');
+    _invalidate('site_settings');
   }
 
   /// Key of the admin-controlled "loop playback" switch. When enabled each
@@ -511,12 +562,14 @@ class ContentService {
   // Featured content
   // ---------------------------------------------------------------
   static Future<List<Map<String, dynamic>>> getFeaturedContent() async {
-    final res = await _client
-        .from('featured_content')
-        .select()
-        .eq('enabled', true)
-        .order('sort_order');
-    return (res as List).cast<Map<String, dynamic>>();
+    return _cached('featured_content', () async {
+      final res = await _client
+          .from('featured_content')
+          .select()
+          .eq('enabled', true)
+          .order('sort_order');
+      return (res as List).cast<Map<String, dynamic>>();
+    });
   }
 
   // ---------------------------------------------------------------
@@ -594,4 +647,15 @@ class ContentService {
         .update({'is_active': active})
         .eq('id', userId);
   }
+}
+
+/// Value stored by [ContentService]'s in-memory read cache. Expires after
+/// the configured TTL so reference data never goes stale for long.
+class _CachedValue {
+  final Object? value;
+  final DateTime expiresAt;
+
+  _CachedValue(this.value, this.expiresAt);
+
+  bool get isExpired => DateTime.now().isAfter(expiresAt);
 }

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/channel.dart';
 import '../models/episode.dart';
 import '../models/schedule.dart';
+import '../models/screen_filter.dart';
 import '../models/tv_style.dart';
 import '../models/up_next.dart';
 import '../utils/program_queue.dart';
@@ -45,6 +46,7 @@ class TvState extends ChangeNotifier {
   bool _loading = true;
   String? _error;
   String _digitBuffer = '';
+  ScreenFilter _screenFilter = ScreenFilter.scanlines;
   Timer? _digitTimer;
   Timer? _airSyncTimer;
   bool _fullscreen = false;
@@ -76,6 +78,11 @@ class TvState extends ChangeNotifier {
   bool get muted => _muted;
   bool get reduceEffects => _reduceEffects;
 
+  /// The currently selected screen picture filter (scanlines, static,
+  /// amber tube, VHS, etc.). Persisted per viewer.
+  ScreenFilter get screenFilter => _screenFilter;
+  List<ScreenFilter> get screenFilters => ScreenFilter.values;
+
   /// Admin-controlled channel playback switch (site setting
   /// `loop_channels_enabled`). When true the queue loops forever
   /// (last episode wraps back to the first); when false playback stops
@@ -100,15 +107,27 @@ class TvState extends ChangeNotifier {
       // Ensure the scheduling timezone (used for every date/time shown on
       // the "Up Next" card and admin schedule list) is resolved first.
       await SchedulingClock.init();
-      _loopChannels = await ContentService.getLoopChannelsEnabled();
       final prefs = await SharedPreferences.getInstance();
       _volume = prefs.getInt('tv_volume') ?? 50;
       _muted = prefs.getBool('tv_muted') ?? false;
       _reduceEffects = prefs.getBool('tv_reduce_effects') ?? false;
       final savedStyleSlug = prefs.getString('tv_style_slug');
+      final savedFilterId = prefs.getString('tv_screen_filter');
+      _screenFilter = ScreenFilter.values.firstWhere(
+        (f) => f.id == savedFilterId,
+        orElse: () => ScreenFilter.scanlines,
+      );
 
-      _tvStyles = await _retryWithTimeout(ContentService.getTvStyles);
-      _channels = await _retryWithTimeout(ContentService.getChannels);
+      // Kick off the three independent data loads at the same time
+      // (settings, styles, channels) instead of waiting for each one in
+      // turn — this is the single biggest speed-up for the initial load.
+      final settingsFuture = _retryWithTimeout(ContentService.getLoopChannelsEnabled);
+      final stylesFuture = _retryWithTimeout(ContentService.getTvStyles);
+      final channelsFuture = _retryWithTimeout(ContentService.getChannels);
+
+      _loopChannels = await settingsFuture;
+      _tvStyles = await stylesFuture;
+      _channels = await channelsFuture;
       _channels.sort((a, b) => a.channelNumber.compareTo(b.channelNumber));
 
       if (_tvStyles.isEmpty) {
@@ -184,11 +203,24 @@ class TvState extends ChangeNotifier {
   /// should start on, the next program, and the channel's upcoming
   /// "announcement" (soonest scheduled program).
   Future<void> _loadCurrentProgram() async {
-    if (_currentChannel == null) return;
+    final channel = _currentChannel;
+    if (channel == null) return;
     try {
-      final queue = await _retryWithTimeout(
-        () => ContentService.getChannelProgramQueue(_currentChannel!.id),
+      // Fire the three independent channel-data requests in parallel:
+      // the eligible queue, the server-side "airing" episode, and the
+      // upcoming scheduled-program announcement. Only the Up Next preview
+      // depends on the queue + current program, so it stays sequential.
+      final queueFuture = _retryWithTimeout(
+        () => ContentService.getChannelProgramQueue(channel.id),
       );
+      final airingFuture = _retryWithTimeout(
+        () => ContentService.getCurrentProgramRaw(channel.id),
+      );
+      final scheduledFuture = _retryWithTimeout(
+        () => ContentService.getNextScheduledProgram(channel.id),
+      );
+
+      final queue = await queueFuture;
       _programQueue = queue;
 
       // Prefer the server-side "airing" episode (set by the backend loop)
@@ -197,10 +229,13 @@ class TvState extends ChangeNotifier {
       // not this TV is open. Without a server airing we keep the previous
       // behavior: tune straight to the channel's default ("Now Playing")
       // episode and continue the loop naturally from there.
-      _currentProgram = await _resolveStartWithAiring(queue);
+      _currentProgram = await _resolveStartWithAiring(
+        queue,
+        airingRow: await _safe(airingFuture),
+      );
 
       await _refreshUpNext();
-      await _refreshNextScheduled();
+      _nextScheduledProgram = await _safe(scheduledFuture);
 
       if (kDebugMode) {
         debugPrint(
@@ -214,6 +249,18 @@ class TvState extends ChangeNotifier {
       _currentProgram = null;
       _upNext = null;
       _nextScheduledProgram = null;
+    }
+  }
+
+  /// Await [future], swallowing errors so one optional data load (airing
+  /// program, scheduled announcement) can never take the whole channel
+  /// tuning down with it.
+  Future<T?> _safe<T>(Future<T?> future) async {
+    try {
+      return await future;
+    } catch (e) {
+      if (kDebugMode) debugPrint('TvState._safe error: $e');
+      return null;
     }
   }
 
@@ -255,12 +302,21 @@ class TvState extends ChangeNotifier {
   /// it is part of the eligible queue — or when the queue is empty and the
   /// airing episode itself is still playable. Otherwise fall back to
   /// [_resolveStartProgram] (channel default before first eligible).
-  Future<Episode?> _resolveStartWithAiring(List<Episode> queue) async {
-    Map<String, dynamic>? row;
-    try {
-      row = await ContentService.getCurrentProgramRaw(_currentChannel!.id);
-    } catch (_) {
-      row = null;
+  ///
+  /// [airingRow] is the already-fetched result of `get_current_program` so
+  /// callers using [_loadCurrentProgram]'s parallel batch don't trigger a
+  /// second RPC. When null it is fetched lazily.
+  Future<Episode?> _resolveStartWithAiring(
+    List<Episode> queue, {
+    Map<String, dynamic>? airingRow,
+  }) async {
+    Map<String, dynamic>? row = airingRow;
+    if (row == null) {
+      try {
+        row = await ContentService.getCurrentProgramRaw(_currentChannel!.id);
+      } catch (_) {
+        row = null;
+      }
     }
     if (row != null && row['is_airing'] == true) {
       final airingId = row['episode_id'] as String?;
@@ -377,11 +433,14 @@ class TvState extends ChangeNotifier {
     if (_power == PowerState.on) return;
     _power = PowerState.startingUp;
     notifyListeners();
+    // Start fetching the program while the tube "warms up" so the video is
+    // ready (or almost ready) the moment the power LED lands on.
+    final loadFuture = _currentProgram == null
+        ? Future<void>.sync(_loadCurrentProgram)
+        : null;
     await Future.delayed(const Duration(milliseconds: 900));
     _power = PowerState.on;
-    if (_currentChannel != null && _currentProgram == null) {
-      await _loadCurrentProgram();
-    }
+    if (loadFuture != null) await loadFuture;
     notifyListeners();
   }
 
@@ -409,6 +468,16 @@ class TvState extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------
+  // Screen filter selection
+  // ---------------------------------------------------------------
+  Future<void> selectScreenFilter(ScreenFilter filter) async {
+    _screenFilter = filter;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('tv_screen_filter', filter.id);
+  }
+
+  // ---------------------------------------------------------------
   // Channel switching
   // ---------------------------------------------------------------
   Future<void> _switchToChannel(Channel channel) async {
@@ -427,11 +496,13 @@ class TvState extends ChangeNotifier {
     }
     notifyListeners();
 
-    // Show static/glitch transition briefly.
-    await Future.delayed(const Duration(milliseconds: 550));
-
+    // Show static/glitch transition briefly, but start fetching the next
+    // channel's program at the same time so it is ready (or nearly ready)
+    // when the static clears — this is what makes channel changes feel fast.
     _currentChannel = channel;
-    await _loadCurrentProgram();
+    final loadFuture = Future<void>.sync(_loadCurrentProgram);
+    await Future.delayed(const Duration(milliseconds: 550));
+    await loadFuture;
 
     await Future.delayed(const Duration(milliseconds: 150));
     _channelChanging = false;

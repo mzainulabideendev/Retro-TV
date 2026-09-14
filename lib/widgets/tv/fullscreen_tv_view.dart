@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../models/screen_filter.dart';
 import '../../services/tv_state.dart';
-import 'crt_overlay.dart';
 import 'static_noise.dart';
 
 /// Fullscreen TV viewing mode rendered IN PLACE (no separate route), so the
@@ -29,9 +29,53 @@ class FullscreenTvView extends StatefulWidget {
 }
 
 class _FullscreenTvViewState extends State<FullscreenTvView> {
+  Future<void> _pickFilter() async {
+    final tv = widget.tv;
+    if (!tv.isOn) return;
+    final picked = await showModalBottomSheet<ScreenFilter>(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C22),
+      builder: (sheetContext) {
+        return ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: Text(
+                'Screen Filter',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            for (final f in ScreenFilter.values)
+              ListTile(
+                leading: Icon(f.icon, color: Colors.white70),
+                title: Text(f.label, style: const TextStyle(color: Colors.white)),
+                subtitle: Text(
+                  f.description,
+                  style: const TextStyle(color: Colors.white54, fontSize: 11),
+                ),
+                trailing: tv.screenFilter == f
+                    ? Icon(Icons.check_circle, color: tv.currentStyle?.accentColor)
+                    : null,
+                onTap: () => Navigator.of(sheetContext).pop(f),
+              ),
+          ],
+        );
+      },
+    );
+    if (picked != null && mounted) {
+      await widget.tv.selectScreenFilter(picked);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final style = widget.tv.currentStyle;
+    final filter = widget.tv.screenFilter;
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -48,16 +92,10 @@ class _FullscreenTvViewState extends State<FullscreenTvView> {
                   // pause, overlay, or trigger the embedded player's own
                   // controls. Navigation lives on the remote-style bars above
                   // and below, like a real TV.
-                  AbsorbPointer(child: widget.screen),
-                  StaticNoise(active: widget.tv.channelChanging),
-                  CrtOverlay(
-                    scanlineOpacity: widget.tv.reduceEffects
-                        ? 0.06
-                        : (style?.scanlineOpacity ?? 0.15),
-                    glowColor: style?.glowColor ?? Colors.cyanAccent,
-                    reduceMotion: widget.tv.reduceEffects,
-                    enabled: true,
+                  AbsorbPointer(
+                    child: _applyColorGrade(widget.screen, filter),
                   ),
+                  StaticNoise(active: widget.tv.channelChanging),
                 ],
               ),
             ),
@@ -73,6 +111,20 @@ class _FullscreenTvViewState extends State<FullscreenTvView> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Applies the filter's exact color grade to Flutter-rendered picture
+  /// content (native). On web the YouTube iframe is an external platform
+  /// view Flutter cannot repaint — the CrtOverlay tint wash (rendered
+  /// inside the player, see YoutubeScreenPlayer.crtOverlay) carries the
+  /// grade on top instead.
+  Widget _applyColorGrade(Widget child, ScreenFilter filter) {
+    final matrix = filter.matrix;
+    if (matrix == null) return child;
+    return ColorFiltered(
+      colorFilter: ColorFilter.matrix(matrix),
+      child: child,
     );
   }
 
@@ -97,6 +149,11 @@ class _FullscreenTvViewState extends State<FullscreenTvView> {
               ),
               overflow: TextOverflow.ellipsis,
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.tune, color: Colors.white),
+            tooltip: 'Screen filter',
+            onPressed: _pickFilter,
           ),
         ],
       ),
