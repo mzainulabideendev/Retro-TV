@@ -17,8 +17,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Fetches the target with browser-grade headers. YouTube intermittently
 // answers the free feeds endpoint with a bogus 404 / HTML during short
-// rate-limit windows, so a few spaced retries catch a working window.
-async function fetchWithRetry(target, attempts = 3) {
+// rate-limit windows, so a couple of spaced retries catch a working window.
+async function fetchWithRetry(target, attempts = 2) {
   let lastStatus = 502;
   let lastBody = null;
   let lastContentType = null;

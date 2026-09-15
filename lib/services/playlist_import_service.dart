@@ -33,20 +33,32 @@ class PlaylistImportService {
     // Supabase Edge Function fetches server-side first; if it is unreachable
     // (not deployed, timeout, …) the client tries the keyless RSS / page-scrape
     // fallback below, which YouTube blocks intermittently (hence the retries).
+    // Hard ceilings keep the spinner honest: edge fn 8s, fallback 60s max.
     try {
       return await _viaEdgeFunction(playlistId);
     } catch (e) {
-      if (kDebugMode) debugPrint('PlaylistImportService: edge fn fallback -> RSS: $e');
-      return _viaRss(playlistId);
+      if (kDebugMode) {
+        debugPrint('PlaylistImportService: edge fn fallback -> RSS: $e');
+      }
+      return _viaRss(playlistId).timeout(const Duration(seconds: 60));
     }
   }
 
   // ---------------------------------------------------------------
   // Primary: Supabase Edge Function (free keyless RSS fetch, server-side)
   // ---------------------------------------------------------------
+  // All imports in this app session hit the same Supabase project, so once
+  // the Edge Function proves missing (HTTP 404/5xx or auth failure) we skip
+  // it for the rest of the session and go straight to the keyless fallback —
+  // otherwise every import pays an extra up-to-8s timeout on a dead end.
+  static bool _edgeUnavailable = false;
+
   static Future<List<Map<String, dynamic>>> _viaEdgeFunction(
     String playlistId,
   ) async {
+    if (_edgeUnavailable) {
+      throw Exception('Edge function unavailable for this session');
+    }
     final session = SupabaseService.client.auth.currentSession;
     final base = AppConfig.supabaseUrl;
     final headers = <String, String>{'Accept': 'application/json'};
@@ -61,9 +73,12 @@ class PlaylistImportService {
 
     final res = await http
         .get(url, headers: headers)
-        .timeout(const Duration(seconds: 45));
+        .timeout(const Duration(seconds: 8));
 
     if (res.statusCode != 200) {
+      if (res.statusCode == 404 || res.statusCode >= 500) {
+        _edgeUnavailable = true;
+      }
       // Surface the server's (actionable) error message when present.
       var reason = 'Import service unavailable (HTTP ${res.statusCode})';
       try {
@@ -137,8 +152,8 @@ class PlaylistImportService {
     );
 
     // Pass 1: RSS feed (with retries).
-    for (var attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) await Future<void>.delayed(const Duration(seconds: 2));
+    for (var attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) await Future<void>.delayed(const Duration(milliseconds: 800));
       try {
         final body = await _fetchText(feedUrl);
         if (_looksLikeXml(body)) {
@@ -168,8 +183,8 @@ class PlaylistImportService {
     // Pass 2: scrape `ytInitialData` from the playlist HTML page (with
     // retries, since YouTube may serve a consent/bot-check page on the first
     // hit).
-    for (var attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) await Future<void>.delayed(const Duration(seconds: 2));
+    for (var attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) await Future<void>.delayed(const Duration(milliseconds: 800));
       try {
         final body = await _fetchText(pageUrl);
         return _parseYtInitialData(body, playlistId);
@@ -188,28 +203,41 @@ class PlaylistImportService {
     );
   }
 
-  /// Fetches [url] directly first, then through each CORS relay. On Flutter
-  /// Web a direct browser fetch of YouTube is CORS-blocked (`ClientException:
-  /// Failed to fetch`), so the relay list is essential there.
+  /// Fetches [url] directly AND through every CORS relay at the same time,
+  /// resolving with the FIRST source that returns. On Flutter Web a direct
+  /// browser fetch of YouTube is CORS-blocked (`ClientException: Failed to
+  /// fetch`), so the relay list is essential there — and the fastest relay
+  /// (the /api/rss proxy on the same Vercel deployment) usually wins in
+  /// well under a second.
   static Future<String> _fetchText(Uri url) async {
-    try {
-      return await _fetchDirect(url);
-    } catch (e) {
-      final directError = e;
-      for (final prefix in _relayPrefixes) {
-        try {
-          final relayUrl = Uri.parse(
-            '$prefix${Uri.encodeComponent(url.toString())}',
+    final candidates = <Future<String>>[
+      _fetchDirect(url),
+      for (final prefix in _relayPrefixes)
+        _fetchDirect(
+          Uri.parse('$prefix${Uri.encodeComponent(url.toString())}'),
+        ),
+    ];
+    final errors = <String>[];
+    final completer = Completer<String>();
+    var pending = candidates.length;
+    for (final candidate in candidates) {
+      candidate.then((value) {
+        if (!completer.isCompleted) completer.complete(value);
+      }).catchError((Object e) {
+        errors.add(e.toString());
+        pending--;
+        if (pending == 0 && !completer.isCompleted) {
+          completer.completeError(
+            Exception(
+              errors.isEmpty
+                  ? 'All source, relay fetches failed'
+                  : errors.first,
+            ),
           );
-          return await _fetchDirect(relayUrl);
-        } catch (_) {
-          // try the next relay
         }
-      }
-      throw Exception(
-        directError.toString().replaceAll('ClientException: ', ''),
-      );
+      });
     }
+    return completer.future;
   }
 
   static Future<String> _fetchDirect(Uri url) async {
@@ -220,7 +248,7 @@ class PlaylistImportService {
     final headers = kIsWeb ? const <String, String>{} : _browserHeaders;
     final res = await http
         .get(url, headers: headers)
-        .timeout(const Duration(seconds: 20));
+        .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
       throw Exception(
         'Playlist not found or private (HTTP ${res.statusCode}).',
