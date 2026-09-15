@@ -34,22 +34,39 @@ const MAX_ITEMS = 300;
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const playlistCache = new Map(); // playlistId -> { at, items }
 
-// Verifies the caller is an admin / content manager via Supabase's RPC.
+// Verifies the caller is an admin / content manager. Uses the user's own
+// Supabase JWT the same way the Flutter app does: resolve the user id from
+// the auth token, then read their `role` from the profiles table (RLS allows
+// each user to read their own row). No custom RPC is required.
 async function isContentManager(authHeader) {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return false;
   const token = (authHeader || '').replace(/^Bearer\s+/i, '');
   if (!token) return false;
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/is_content_manager`, {
-      method: 'POST',
+    const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       headers: {
-        'Content-Type': 'application/json',
         apikey: SUPABASE_ANON_KEY,
         Authorization: `Bearer ${token}`,
       },
-      body: '{}',
     });
-    return res.ok;
+    if (!userRes.ok) return false;
+    const user = await userRes.json();
+    const userId = user && user.id;
+    if (!userId) return false;
+
+    const profileRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/profiles?select=role&id=eq.${userId}&limit=1`,
+      {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    if (!profileRes.ok) return false;
+    const rows = await profileRes.json();
+    const role = Array.isArray(rows) && rows[0] ? rows[0].role : '';
+    return ['super_admin', 'admin', 'editor'].includes(role);
   } catch (_) {
     return false;
   }
@@ -180,6 +197,20 @@ async function fetchWithRetry(target, attempts = 2) {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
+
+  // The browser sends a CORS preflight (OPTIONS) whenever the request carries
+  // an `Authorization` header. Without this reply the preflight fails and the
+  // header is never sent — which looked like the admin gate rejecting admins.
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Authorization, Content-Type, x-client-info, apikey',
+    );
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
 
   // Admin-only: importing playlists calls YouTube on behalf of the admin, so
   // only logged-in admins / content managers may use this endpoint. This also
