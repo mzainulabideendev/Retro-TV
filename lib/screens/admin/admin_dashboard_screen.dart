@@ -26,6 +26,29 @@ enum AdminSection {
   auditLogs,
 }
 
+/// Light theme for the entire admin area. The viewer side of the app is a
+/// dark CRT theme seeded with an amber/gold accent — but the admin console
+/// should read as a clean, light back-office: black text on white cards,
+/// black headers, and no orange tinting on search bars/labels/buttons.
+final ThemeData adminTheme = ThemeData(
+  brightness: Brightness.light,
+  useMaterial3: true,
+  colorScheme: ColorScheme.fromSeed(
+    seedColor: Colors.black,
+    brightness: Brightness.light,
+    primary: Colors.black,
+  ),
+  scaffoldBackgroundColor: const Color(0xFFF4F5F7),
+  fontFamily: 'monospace',
+  cardTheme: const CardThemeData(
+    color: Colors.white,
+    elevation: 2,
+  ),
+  dialogTheme: const DialogThemeData(
+    backgroundColor: Colors.white,
+  ),
+);
+
 /// Professional admin dashboard shell with a role-aware sidebar.
 /// Editors only see Shows/Episodes management; admins/super_admins see
 /// everything except Users which is super_admin-only for role changes.
@@ -68,44 +91,47 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     // Responsive shell: wide screens get the classic sidebar + content two
     // pane layout; narrow screens (phones) collapse the navigation into a
     // drawer so the content panels never get squeezed and overflow.
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth >= 840;
-        if (wide) {
+    return Theme(
+      data: adminTheme,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = constraints.maxWidth >= 840;
+          if (wide) {
+            return Scaffold(
+              backgroundColor: const Color(0xFFF4F5F7),
+              body: Row(
+                children: [
+                  SizedBox(width: 220, child: sidebar),
+                  Expanded(child: _buildPanel(profile)),
+                ],
+              ),
+            );
+          }
           return Scaffold(
             backgroundColor: const Color(0xFFF4F5F7),
-            body: Row(
-              children: [
-                SizedBox(width: 220, child: sidebar),
-                Expanded(child: _buildPanel(profile)),
-              ],
+            appBar: AppBar(
+              backgroundColor: const Color(0xFF1C1C26),
+              elevation: 0,
+              leading: Builder(
+                builder: (context) => IconButton(
+                  icon: const Icon(Icons.menu, color: Colors.white),
+                  onPressed: () => Scaffold.of(context).openDrawer(),
+                ),
+              ),
+              title: const Text(
+                'Retro TV Admin',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
+            drawer: Drawer(child: sidebar),
+            body: _buildPanel(profile),
           );
-        }
-        return Scaffold(
-          backgroundColor: const Color(0xFFF4F5F7),
-          appBar: AppBar(
-            backgroundColor: const Color(0xFF1C1C26),
-            elevation: 0,
-            leading: Builder(
-              builder: (context) => IconButton(
-                icon: const Icon(Icons.menu, color: Colors.white),
-                onPressed: () => Scaffold.of(context).openDrawer(),
-              ),
-            ),
-            title: const Text(
-              'Retro TV Admin',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          drawer: Drawer(child: sidebar),
-          body: _buildPanel(profile),
-        );
-      },
+        },
+      ),
     );
   }
 
