@@ -36,6 +36,7 @@ class AdminPageScaffold extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
+                        color: Colors.black,
                       ),
                     ),
                   ),
@@ -146,7 +147,7 @@ class ErrorBox extends StatelessWidget {
 
 /// A compact dropdown used to filter admin tables. A null [value] means
 /// "All" (no filtering). [onChanged] with null resets the filter.
-class AdminFilterDropdown<T> extends StatelessWidget {
+class AdminFilterDropdown<T> extends StatefulWidget {
   final T? value;
   final String label;
   final String allLabel;
@@ -165,24 +166,76 @@ class AdminFilterDropdown<T> extends StatelessWidget {
   });
 
   @override
+  State<AdminFilterDropdown<T>> createState() => _AdminFilterDropdownState<T>();
+}
+
+class _AdminFilterDropdownState<T> extends State<AdminFilterDropdown<T>> {
+  T? _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.value;
+  }
+
+  @override
+  void didUpdateWidget(AdminFilterDropdown<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value) _selected = widget.value;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<T?>(
-      initialValue: value,
-      isExpanded: true,
+    final sel =
+        _selected != null && widget.options.contains(_selected)
+            ? _selected
+            : null;
+    return InputDecorator(
       decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: const Icon(Icons.filter_list, size: 18),
+        labelText: widget.label,
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        border: const OutlineInputBorder(),
-      ),
-      items: [
-        DropdownMenuItem<T?>(value: null, child: Text(allLabel)),
-        ...options.map(
-          (o) => DropdownMenuItem<T?>(value: o, child: Text(itemLabel(o))),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 6,
         ),
-      ],
-      onChanged: onChanged,
+        border: const OutlineInputBorder(),
+        labelStyle: const TextStyle(color: Colors.black54, fontSize: 13),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<T>(
+          value: sel,
+          isExpanded: true,
+          hint: Text(
+            widget.allLabel,
+            style: const TextStyle(color: Colors.black45, fontSize: 13),
+          ),
+          style: const TextStyle(color: Colors.black87, fontSize: 13),
+          dropdownColor: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          items: [
+            DropdownMenuItem<T>(
+              value: null,
+              child: Text(
+                widget.allLabel,
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+            ...widget.options.map(
+              (o) => DropdownMenuItem<T>(
+                value: o,
+                child: Text(
+                  widget.itemLabel(o),
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+            ),
+          ],
+          onChanged: (v) {
+            setState(() => _selected = v);
+            widget.onChanged(v);
+          },
+        ),
+      ),
     );
   }
 }

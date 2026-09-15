@@ -263,10 +263,14 @@ class _EpisodesPanelState extends State<EpisodesPanel> {
               children: [
                 TextField(
                   controller: _searchCtrl,
+                  style: const TextStyle(color: Colors.black),
+                  cursorColor: Colors.black,
                   decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search),
+                    prefixIcon: Icon(Icons.search, color: Colors.black54),
                     hintText:
                         'Search episodes by title, YouTube ID, or S/E number...',
+                    hintStyle: TextStyle(color: Colors.black45),
+                    labelStyle: TextStyle(color: Colors.black54),
                     isDense: true,
                     border: OutlineInputBorder(),
                   ),

@@ -204,9 +204,13 @@ class _ChannelsPanelState extends State<ChannelsPanel> {
               children: [
                 TextField(
                   controller: _searchCtrl,
+                  style: const TextStyle(color: Colors.black),
+                  cursorColor: Colors.black,
                   decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search),
+                    prefixIcon: Icon(Icons.search, color: Colors.black54),
                     hintText: 'Search channels by name, number, or type...',
+                    hintStyle: TextStyle(color: Colors.black45),
+                    labelStyle: TextStyle(color: Colors.black54),
                     isDense: true,
                     border: OutlineInputBorder(),
                   ),

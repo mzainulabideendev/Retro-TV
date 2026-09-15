@@ -26,6 +26,10 @@ enum AdminSection {
   auditLogs,
 }
 
+/// Visible build tag rendered in the admin sidebar so it is easy to confirm
+/// the deployment is running the latest bundle after a deploy.
+const String kAdminBuildTag = 'v1.2.1 · search & filters';
+
 /// Light theme for the entire admin area. The viewer side of the app is a
 /// dark CRT theme seeded with an amber/gold accent — but the admin console
 /// should read as a clean, light back-office: black text on white cards,
@@ -206,6 +210,15 @@ class _Sidebar extends StatelessWidget {
               color: Colors.white,
               fontWeight: FontWeight.bold,
               fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            kAdminBuildTag,
+            style: TextStyle(
+              color: Colors.white54,
+              fontWeight: FontWeight.normal,
+              fontSize: 11,
             ),
           ),
           const SizedBox(height: 20),
