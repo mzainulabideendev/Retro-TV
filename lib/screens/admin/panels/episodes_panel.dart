@@ -21,6 +21,36 @@ class _EpisodesPanelState extends State<EpisodesPanel> {
   List<Episode> _episodes = [];
   List<Show> _shows = [];
   List<Channel> _channels = [];
+  final _searchCtrl = TextEditingController();
+  String _search = '';
+  String? _filterShowId;
+  String? _filterChannelId;
+  String? _filterStatus;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  List<Episode> get _filtered {
+    final q = _search.toLowerCase();
+    return _episodes.where((e) {
+      final matchesSearch = _search.isEmpty ||
+          e.title.toLowerCase().contains(q) ||
+          e.youtubeVideoId.toLowerCase().contains(q) ||
+          'S${e.seasonNumber}E${e.episodeNumber ?? ''}'
+              .toLowerCase()
+              .contains(q);
+      final matchesShow =
+          _filterShowId == null || e.showId == _filterShowId;
+      final matchesChannel =
+          _filterChannelId == null || e.channelId == _filterChannelId;
+      final matchesStatus =
+          _filterStatus == null || e.status == _filterStatus;
+      return matchesSearch && matchesShow && matchesChannel && matchesStatus;
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -228,18 +258,83 @@ class _EpisodesPanelState extends State<EpisodesPanel> {
           ? const LoadingBox()
           : _error != null
           ? ErrorBox(message: _error!, onRetry: _load)
-          : Card(
-              child: ResponsiveTableScroll(
-                child: DataTable(
-                  columns: const [
-                    DataColumn(label: Text('Episode')),
-                    DataColumn(label: Text('Show')),
-                    DataColumn(label: Text('S/E')),
-                    DataColumn(label: Text('Channel')),
-                    DataColumn(label: Text('Status')),
-                    DataColumn(label: Text('Actions')),
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _searchCtrl,
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search),
+                    hintText:
+                        'Search episodes by title, YouTube ID, or S/E number...',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (v) => setState(() => _search = v),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    SizedBox(
+                      width: 180,
+                      child: AdminFilterDropdown<String>(
+                        value: _filterShowId,
+                        label: 'Show',
+                        options: _shows.map((s) => s.id).toList(),
+                        itemLabel: (id) => _showTitle(id),
+                        onChanged: (v) => setState(() => _filterShowId = v),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 200,
+                      child: AdminFilterDropdown<String>(
+                        value: _filterChannelId,
+                        label: 'Channel',
+                        options: _channels.map((c) => c.id).toList(),
+                        itemLabel: (id) => _channelName(id),
+                        onChanged: (v) => setState(() => _filterChannelId = v),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 160,
+                      child: AdminFilterDropdown<String>(
+                        value: _filterStatus,
+                        label: 'Status',
+                        options: const ['draft', 'published', 'disabled'],
+                        itemLabel: (s) =>
+                            s[0].toUpperCase() + s.substring(1),
+                        onChanged: (v) => setState(() => _filterStatus = v),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => setState(() {
+                        _searchCtrl.clear();
+                        _search = '';
+                        _filterShowId = null;
+                        _filterChannelId = null;
+                        _filterStatus = null;
+                      }),
+                      icon: const Icon(Icons.filter_alt_off, size: 16),
+                      label: const Text('Clear'),
+                    ),
                   ],
-                  rows: _episodes.map((e) {
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: Card(
+                    child: ResponsiveTableScroll(
+                      child: DataTable(
+                        columns: const [
+                          DataColumn(label: Text('Episode')),
+                          DataColumn(label: Text('Show')),
+                          DataColumn(label: Text('S/E')),
+                          DataColumn(label: Text('Channel')),
+                          DataColumn(label: Text('Status')),
+                          DataColumn(label: Text('Actions')),
+                        ],
+                        rows: _filtered.map((e) {
                     return DataRow(
                       cells: [
                         DataCell(Text(e.title)),
@@ -296,9 +391,12 @@ class _EpisodesPanelState extends State<EpisodesPanel> {
                       ],
                     );
                   }).toList(),
+                    ),
+                  ),
                 ),
               ),
-            ),
+            ],
+          ),
     );
   }
 

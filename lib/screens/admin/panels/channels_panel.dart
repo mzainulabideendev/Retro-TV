@@ -13,11 +13,34 @@ class ChannelsPanel extends StatefulWidget {
 }
 
 class _ChannelsPanelState extends State<ChannelsPanel> {
+  static const _types = [
+    'kids',
+    'cartoons',
+    'animation',
+    'classic_tv',
+    'comedy',
+    'educational',
+    'music',
+    'retro',
+    'movies',
+    'general',
+  ];
+
   bool _loading = true;
   String? _error;
   List<Channel> _channels = [];
   List<Category> _categories = [];
+  final _searchCtrl = TextEditingController();
   String _search = '';
+  String? _filterCategoryId;
+  String? _filterType;
+  bool? _filterEnabled;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -43,10 +66,22 @@ class _ChannelsPanelState extends State<ChannelsPanel> {
   }
 
   List<Channel> get _filtered {
-    if (_search.isEmpty) return _channels;
-    return _channels
-        .where((c) => c.name.toLowerCase().contains(_search.toLowerCase()))
-        .toList();
+    final q = _search.toLowerCase();
+    return _channels.where((c) {
+      final matchesSearch = _search.isEmpty ||
+          c.name.toLowerCase().contains(q) ||
+          c.channelNumber.toString().contains(q) ||
+          c.channelType.toLowerCase().contains(q);
+      final matchesCategory = _filterCategoryId == null ||
+          c.categoryId == _filterCategoryId;
+      final matchesType = _filterType == null || c.channelType == _filterType;
+      final matchesEnabled =
+          _filterEnabled == null || c.enabled == _filterEnabled;
+      return matchesSearch &&
+          matchesCategory &&
+          matchesType &&
+          matchesEnabled;
+    }).toList();
   }
 
   String _categoryName(String? id) {
@@ -168,13 +203,65 @@ class _ChannelsPanelState extends State<ChannelsPanel> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 TextField(
+                  controller: _searchCtrl,
                   decoration: const InputDecoration(
                     prefixIcon: Icon(Icons.search),
-                    hintText: 'Search channels...',
+                    hintText: 'Search channels by name, number, or type...',
                     isDense: true,
                     border: OutlineInputBorder(),
                   ),
                   onChanged: (v) => setState(() => _search = v),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    SizedBox(
+                      width: 180,
+                      child: AdminFilterDropdown<String>(
+                        value: _filterCategoryId,
+                        label: 'Category',
+                        options: _categories.map((c) => c.id).toList(),
+                        itemLabel: (id) => _categoryName(id),
+                        onChanged: (v) =>
+                            setState(() => _filterCategoryId = v),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 160,
+                      child: AdminFilterDropdown<String>(
+                        value: _filterType,
+                        label: 'Type',
+                        options: _types,
+                        itemLabel: (t) =>
+                            t.replaceAll('_', ' ').toUpperCase(),
+                        onChanged: (v) => setState(() => _filterType = v),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 150,
+                      child: AdminFilterDropdown<bool>(
+                        value: _filterEnabled,
+                        label: 'Status',
+                        options: const [true, false],
+                        itemLabel: (v) => v ? 'Enabled' : 'Disabled',
+                        onChanged: (v) =>
+                            setState(() => _filterEnabled = v),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => setState(() {
+                        _searchCtrl.clear();
+                        _search = '';
+                        _filterCategoryId = null;
+                        _filterType = null;
+                        _filterEnabled = null;
+                      }),
+                      icon: const Icon(Icons.filter_alt_off, size: 16),
+                      label: const Text('Clear'),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 Expanded(

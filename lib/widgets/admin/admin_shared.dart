@@ -144,6 +144,49 @@ class ErrorBox extends StatelessWidget {
   }
 }
 
+/// A compact dropdown used to filter admin tables. A null [value] means
+/// "All" (no filtering). [onChanged] with null resets the filter.
+class AdminFilterDropdown<T> extends StatelessWidget {
+  final T? value;
+  final String label;
+  final String allLabel;
+  final List<T> options;
+  final String Function(T) itemLabel;
+  final ValueChanged<T?> onChanged;
+
+  const AdminFilterDropdown({
+    super.key,
+    required this.value,
+    required this.label,
+    required this.options,
+    required this.itemLabel,
+    required this.onChanged,
+    this.allLabel = 'All',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<T?>(
+      initialValue: value,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: const Icon(Icons.filter_list, size: 18),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        border: const OutlineInputBorder(),
+      ),
+      items: [
+        DropdownMenuItem<T?>(value: null, child: Text(allLabel)),
+        ...options.map(
+          (o) => DropdownMenuItem<T?>(value: o, child: Text(itemLabel(o))),
+        ),
+      ],
+      onChanged: onChanged,
+    );
+  }
+}
+
 class StatusChip extends StatelessWidget {
   final bool enabled;
   const StatusChip({super.key, required this.enabled});
