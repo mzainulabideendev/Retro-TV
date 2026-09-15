@@ -21,8 +21,50 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // trial, no credit card). When YOUTUBE_API_KEY is set as a Vercel env var,
 // playlist imports skip the scraped feeds entirely and use the official API —
 // immune to YouTube's datacenter-IP blocking of the RSS feeds.
+// The YouTube Data API v3 key lives ONLY in the YOUTUBE_API_KEY Vercel env
+// var (server-side). It is never shipped to the browser, and this endpoint is
+// gated to logged-in admins/content-managers (verified against Supabase), so
+// the daily free quota (10,000 units/day) can only be spent by admin playlist
+// imports. A short in-memory cache means re-imports don't touch the quota.
 const YT_API_KEY = process.env.YOUTUBE_API_KEY || '';
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_ANON_KEY =
+  process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || '';
 const MAX_ITEMS = 300;
+const CACHE_TTL_MS = 30 * 60 * 1000;
+const playlistCache = new Map(); // playlistId -> { at, items }
+
+// Verifies the caller is an admin / content manager via Supabase's RPC.
+async function isContentManager(authHeader) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return false;
+  const token = (authHeader || '').replace(/^Bearer\s+/i, '');
+  if (!token) return false;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/is_content_manager`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${token}`,
+      },
+      body: '{}',
+    });
+    return res.ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function dataApiWithCache(playlistId) {
+  const hit = playlistCache.get(playlistId);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.items;
+  const items = await fetchViaDataApi(playlistId);
+  if (items.length > 0) {
+    playlistCache.set(playlistId, { at: Date.now(), items });
+    if (playlistCache.size > 200) playlistCache.clear();
+  }
+  return items;
+}
 
 // Resolves a playlist via the Data API, paginating until done.
 async function fetchViaDataApi(playlistId) {
@@ -138,6 +180,17 @@ async function fetchWithRetry(target, attempts = 2) {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
+
+  // Admin-only: importing playlists calls YouTube on behalf of the admin, so
+  // only logged-in admins / content managers may use this endpoint. This also
+  // stops strangers from spending our (free, fixed) daily API quota.
+  if (!(await isContentManager(req.headers.authorization || ''))) {
+    res.statusCode = 401;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'Unauthorized — admin only.' }));
+    return;
+  }
+
   const url = new URL(req.url, 'http://local');
   const target = url.searchParams.get('url');
   if (!target || !/^https?:\/\//.test(target)) {
@@ -147,13 +200,14 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Official Data API path (only active once YOUTUBE_API_KEY is configured):
+  // Official Data API path (active now that YOUTUBE_API_KEY is configured):
   // if the target looks like a YouTube playlist feeds URL, resolve it through
-  // the free, permanent YouTube Data API instead of scraping.
+  // the free, permanent YouTube Data API instead of scraping. Results are
+  // cached for 30 minutes so re-imports cost zero quota.
   const feedMatch = target.match(/feeds\/videos\.xml.*[?&]playlist_id=([A-Za-z0-9_-]+)/);
   if (YT_API_KEY && feedMatch) {
     try {
-      const items = await fetchViaDataApi(feedMatch[1]);
+      const items = await dataApiWithCache(feedMatch[1]);
       if (items.length > 0) {
         res.statusCode = 200;
         res.setHeader('Content-Type', 'text/xml; charset=UTF-8');
@@ -162,12 +216,6 @@ export default async function handler(req, res) {
       }
     } catch (e) {
       // fall through to the keyless path rather than failing the import
-      try {
-        const parsed = JSON.parse((e && e.message) || '');
-        if (parsed && parsed.error) {
-          res.setHeader('Content-Type', 'application/json');
-        }
-      } catch (_) {}
     }
   }
 

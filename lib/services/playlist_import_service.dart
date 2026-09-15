@@ -210,17 +210,26 @@ class PlaylistImportService {
   /// (the /api/rss proxy on the same Vercel deployment) usually wins in
   /// well under a second.
   static Future<String> _fetchText(Uri url) async {
-    final candidates = <Future<String>>[
+    // The first relay is the Vercel /api/rss proxy on the same deployment. It
+    // is gated to admins, so the caller's Supabase JWT is forwarded (the key
+    // never leaves the server; the browser only sends its own session token).
+    final auth = _sessionAuthHeader();
+    // Build candidates explicitly (keeps the first relay authorized).
+    final rebuilt = <Future<String>>[
       _fetchDirect(url),
-      for (final prefix in _relayPrefixes)
+      _fetchDirect(
+        Uri.parse('${_relayPrefixes[0]}${Uri.encodeComponent(url.toString())}'),
+        extraHeaders: auth,
+      ),
+      for (var i = 1; i < _relayPrefixes.length; i++)
         _fetchDirect(
-          Uri.parse('$prefix${Uri.encodeComponent(url.toString())}'),
+          Uri.parse('${_relayPrefixes[i]}${Uri.encodeComponent(url.toString())}'),
         ),
     ];
     final errors = <String>[];
     final completer = Completer<String>();
-    var pending = candidates.length;
-    for (final candidate in candidates) {
+    var pending = rebuilt.length;
+    for (final candidate in rebuilt) {
       candidate.then((value) {
         if (!completer.isCompleted) completer.complete(value);
       }).catchError((Object e) {
@@ -240,12 +249,26 @@ class PlaylistImportService {
     return completer.future;
   }
 
-  static Future<String> _fetchDirect(Uri url) async {
+  /// The logged-in user's Supabase session JWT, or null when signed out.
+  /// Forwarded to the admin-gated relay so playlists can be imported.
+  static Map<String, String>? _sessionAuthHeader() {
+    final session = SupabaseService.client.auth.currentSession;
+    if (session == null) return null;
+    return {'Authorization': 'Bearer ${session.accessToken}'};
+  }
+
+  static Future<String> _fetchDirect(
+    Uri url, {
+    Map<String, String>? extraHeaders,
+  }) async {
     // On web the browser already sends a real browser User-Agent, and
     // setting the forbidden `User-Agent`/`Cookie` headers via fetch() would
     // throw. Native clients need the browser UA so YouTube returns XML
     // instead of an HTML consent/bot-check page.
-    final headers = kIsWeb ? const <String, String>{} : _browserHeaders;
+    final headers = <String, String>{
+      ...(kIsWeb ? const <String, String>{} : _browserHeaders),
+      ...?extraHeaders,
+    };
     final res = await http
         .get(url, headers: headers)
         .timeout(const Duration(seconds: 10));
