@@ -218,7 +218,17 @@ jobs:
       - name: Install repository tooling
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq apt-utils createrepo-c dpkg-sig rpm
+          # dpkg-sig is not in Ubuntu 24.04 default repos; install from Ubuntu 22.04 repo
+          sudo apt-get install -y -qq apt-utils createrepo-c rpm
+          sudo apt-get install -y -qq software-properties-common
+          sudo add-apt-repository -y universe
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dpkg-sig || {
+            # Fallback: download and install dpkg-sig from Ubuntu 22.04
+            wget -q http://archive.ubuntu.com/ubuntu/pool/universe/d/dpkg-sig/dpkg-sig_0.13.1+git20210118-1_all.deb -O /tmp/dpkg-sig.deb
+            sudo dpkg -i /tmp/dpkg-sig.deb
+            sudo apt-get install -f -y
+          }
       - name: Import GPG signing key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
