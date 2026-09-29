@@ -33,20 +33,20 @@ MANIFEST="$ROOT_DIR/flatpak/com.retrotv.retro_tv.yml"
 # org.kde.Platform branch and pin the manifest to that.
 detect_kde_branch() {
     local out kde_branch="" line exit_code
-    log "build-flatpak: querying flathub for org.kde.Platform branches"
+    log "build-flatpak: querying flathub for org.kde.Platform branches" >&2
     set +e
     # First, let's see what remotes we have
-    log "build-flatpak: checking configured remotes:"
+    log "build-flatpak: checking configured remotes:" >&2
     flatpak remotes --user
-    log "build-flatpak: running remote-ls for flathub..."
+    log "build-flatpak: running remote-ls for flathub..." >&2
     out="$(flatpak remote-ls --user flathub --arch=x86_64 2>&1)"
     exit_code=$?
     set -e
-    log "build-flatpak: remote-ls exit code: $exit_code"
-    log "build-flatpak: remote-ls FULL output:"
-    printf '%s\n' "$out"
+    log "build-flatpak: remote-ls exit code: $exit_code" >&2
+    log "build-flatpak: remote-ls FULL output:" >&2
+    printf '%s\n' "$out" >&2
     if [ $exit_code -ne 0 ]; then
-        log "build-flatpak: WARNING: remote-ls returned non-zero exit code $exit_code, but continuing to parse output"
+        log "build-flatpak: WARNING: remote-ls returned non-zero exit code $exit_code, but continuing to parse output" >&2
     fi
     # Extract KDE branch without head to avoid SIGPIPE
     # Try multiple patterns that might appear in remote-ls output
@@ -55,13 +55,13 @@ detect_kde_branch() {
         if [[ "$line" =~ ^org\.kde\.Platform[[:space:]] ]]; then
             kde_branch="${line%%[[:space:]]*}"
             kde_branch="${kde_branch##*/}"
-            log "build-flatpak: found KDE Platform (pattern 1): $kde_branch"
+            log "build-flatpak: found KDE Platform (pattern 1): $kde_branch" >&2
             break
         fi
         # Pattern 2: org.kde.Platform/x86_64/6.10 at start of line
         if [[ "$line" =~ ^org\.kde\.Platform/ ]]; then
             kde_branch="${line##*/}"
-            log "build-flatpak: found KDE Platform (pattern 2): $kde_branch"
+            log "build-flatpak: found KDE Platform (pattern 2): $kde_branch" >&2
             break
         fi
         # Pattern 3: any line containing org.kde.Platform
@@ -69,27 +69,26 @@ detect_kde_branch() {
             # Extract version from something like org.kde.Platform/x86_64/6.10
             if [[ "$line" =~ org\.kde\.Platform/([^/]+)/([0-9.]+) ]]; then
                 kde_branch="${BASH_REMATCH[2]}"
-                log "build-flatpak: found KDE Platform (pattern 3): $kde_branch"
+                log "build-flatpak: found KDE Platform (pattern 3): $kde_branch" >&2
                 break
             fi
         fi
     done <<< "$out"
     if [ -z "$kde_branch" ]; then
-        log "build-flatpak: ERROR: could not find org.kde.Platform branch in remote-ls output"
-        log "build-flatpak: Available refs containing 'kde' (case-insensitive):"
-        printf '%s\n' "$out" | grep -i kde || log "  (none found)"
+        log "build-flatpak: ERROR: could not find org.kde.Platform branch in remote-ls output" >&2
+        log "build-flatpak: Available refs containing 'kde' (case-insensitive):" >&2
+        printf '%s\n' "$out" | grep -i kde || log "  (none found)" >&2
         return 1
     fi
     printf '%s\n' "$kde_branch"
 }
 
-log "build-flatpak: calling detect_kde_branch..."
-set +e
+log "build-flatpak: calling detect_kde_branch..." >&2
+# Call function directly, capture stdout to KDE_BRANCH, let stderr (logs) pass through
 KDE_BRANCH="$(detect_kde_branch)"
 DETECT_RESULT=$?
-set -e
 if [ $DETECT_RESULT -ne 0 ]; then
-    log "build-flatpak: ERROR: detect_kde_branch failed with exit code $DETECT_RESULT"
+    log "build-flatpak: ERROR: detect_kde_branch failed with exit code $DETECT_RESULT" >&2
     exit $DETECT_RESULT
 fi
 log "build-flatpak: detected KDE branch: '$KDE_BRANCH'"
