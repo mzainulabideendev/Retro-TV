@@ -1,5 +1,11 @@
 # Maintainer: mzainulabideendev <mzainulabideendev@users.noreply.github.com>
-# Arch Linux packaging (builds the Flutter Linux bundle from source with the official flutter package).
+# Arch Linux packaging (builds the Flutter Linux bundle from source).
+#
+# NOTE: Arch Linux does not ship a binary 'flutter' package anymore (only the
+# 'fvm' helper), so the Flutter SDK must already be on PATH before running
+# makepkg - e.g. `fvm use 3.47.2`, or the official tarball from
+# https://docs.flutter.dev/get-started/install/linux. CI does this in the
+# package-arch job.
 
 pkgname=retro-tv
 pkgver=1.2.1
@@ -8,8 +14,8 @@ pkgdesc="Retro-styled IPTV / YouTube streaming TV app (native Linux build)"
 arch=('x86_64')
 url="https://mzainulabideendev.github.io/Retro-TV/"
 license=('MIT')
-depends=('gtk3' 'libmpv' 'libstdc++')
-makedepends=('flutter' 'clang' 'cmake' 'ninja' 'base-devel')
+depends=('gtk3' 'libmpv' 'gcc-libs')
+makedepends=('clang' 'cmake' 'ninja' 'base-devel' 'git')
 options=('!lto')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/mzainulabideendev/Retro-TV/archive/refs/tags/v$pkgver.tar.gz")
 # sha256 for this source cannot be computed yet because the v$pkgver release
@@ -45,5 +51,7 @@ package() {
         "$pkgdir/usr/share/icons/hicolor/192x192/apps/retro-tv.png"
     install -Dm644 packaging/com.retrotv.retro_tv.metainfo.xml \
         "$pkgdir/usr/share/metainfo/com.retrotv.retro_tv.metainfo.xml"
-    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    if [ -f LICENSE ]; then
+        install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    fi
 }

@@ -77,6 +77,11 @@ jobs:
         with:
           name: linux-bundle
           path: build/linux/x64/release/bundle
+      - name: Restore executable bits
+        run: |
+          # artifacts do not preserve the executable bit
+          chmod +x build/linux/x64/release/bundle/retro_tv
+          find build/linux/x64/release/bundle/lib -type f -name '*.so*' -exec chmod +x {} +
       - name: Install dpkg tooling
         run: |
           sudo apt-get update -qq
@@ -99,6 +104,10 @@ jobs:
         with:
           name: linux-bundle
           path: build/linux/x64/release/bundle
+      - name: Restore executable bits
+        run: |
+          chmod +x build/linux/x64/release/bundle/retro_tv
+          find build/linux/x64/release/bundle/lib -type f -name '*.so*' -exec chmod +x {} +
       - name: Install rpm-build
         run: dnf -y install rpm-build
       - name: Build .rpm
@@ -120,12 +129,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install toolchain
-        run: pacman -Sy --noconfirm --needed base-devel fakeroot clang cmake ninja git flutter
+        run: |
+          pacman -Sy --noconfirm --needed base-devel fakeroot clang cmake ninja git
+          # Arch ships no binary 'flutter' package, so install the official SDK
+          # tarball (same version every other job uses) into /opt.
+          curl -fsSL "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz" -o /tmp/flutter.tar.xz
+          mkdir -p /opt/flutter-sdk
+          tar -xJf /tmp/flutter.tar.xz -C /opt/flutter-sdk --strip-components=1
+          /opt/flutter-sdk/bin/flutter --version
       - name: Build PKGBUILD (non-root)
         run: |
           useradd -m build
           chown -R build:build "$GITHUB_WORKSPACE"
-          su - build -c "cd '$GITHUB_WORKSPACE' && export PUB_CACHE='$GITHUB_WORKSPACE/.pub-cache' && bash scripts/build-arch.sh"
+          su - build -c "export PATH=/opt/flutter-sdk/bin:\$PATH; export PUB_CACHE='$GITHUB_WORKSPACE/.pub-cache'; cd '$GITHUB_WORKSPACE' && bash scripts/build-arch.sh"
       - name: Install and verify executable (pacman)
         run: |
           pacman -U --noconfirm build/packages/retro-tv-*.pkg.tar.zst
