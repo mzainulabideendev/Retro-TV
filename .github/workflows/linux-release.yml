@@ -85,7 +85,7 @@ jobs:
       - name: Install dpkg tooling
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq dpkg-dev
+          sudo apt-get install -y -qq dpkg-dev patchelf
       - name: Build .deb
         run: bash scripts/build-deb.sh
       - uses: actions/upload-artifact@v4
@@ -109,7 +109,7 @@ jobs:
           chmod +x build/linux/x64/release/bundle/retro_tv
           find build/linux/x64/release/bundle/lib -type f -name '*.so*' -exec chmod +x {} +
       - name: Install rpm-build
-        run: dnf -y install rpm-build
+        run: dnf -y install rpm-build patchelf
       - name: Build .rpm
         run: bash scripts/build-rpm.sh
       - uses: actions/upload-artifact@v4
@@ -130,7 +130,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install toolchain
         run: |
-          pacman -Sy --noconfirm --needed base-devel fakeroot clang cmake ninja git
+          pacman -Sy --noconfirm --needed base-devel fakeroot clang cmake ninja git patchelf
+          # runtime deps so makepkg's dependency check can resolve them
+          pacman -S --noconfirm --needed gtk3 libmpv
           # Arch ships no binary 'flutter' package, so install the official SDK
           # tarball (same version every other job uses) into /opt.
           curl -fsSL "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz" -o /tmp/flutter.tar.xz

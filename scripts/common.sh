@@ -30,3 +30,24 @@ read_version() {
 require_bundle() {
     [ -x "$BUNDLE_DIR/retro_tv" ] || die "Flutter Linux bundle not found at $BUNDLE_DIR. Run scripts/build-linux.sh first."
 }
+
+# Flutter bakes an absolute build-host path (…/linux/flutter/ephemeral) into the
+# RUNPATH of the bundled plugin .so files and the executable. That path does not
+# exist on a user's machine, and rpmbuild refuses to package such binaries
+# ("contains an invalid runpath"). Rewrite them to $ORIGIN-relative paths:
+#   <libdir>/lib/*.so  -> $ORIGIN
+#   <libdir>/retro_tv  -> $ORIGIN/lib
+# so the layout works both from /usr/lib/retro-tv and from /app/lib/retro-tv.
+normalize_runpath() {
+    local root="$1"
+    command -v patchelf >/dev/null 2>&1 || die "patchelf not found (apt: patchelf / dnf: patchelf)"
+
+    local so
+    while IFS= read -r -d '' so; do
+        patchelf --remove-rpath "$so" 2>/dev/null || true
+        patchelf --set-rpath '$ORIGIN' "$so"
+    done < <(find "$root/lib" -type f -name '*.so*' -print0 2>/dev/null)
+
+    patchelf --remove-rpath "$root/retro_tv" 2>/dev/null || true
+    patchelf --set-rpath '$ORIGIN/lib' "$root/retro_tv"
+}

@@ -15,7 +15,7 @@ arch=('x86_64')
 url="https://mzainulabideendev.github.io/Retro-TV/"
 license=('MIT')
 depends=('gtk3' 'libmpv' 'gcc-libs')
-makedepends=('clang' 'cmake' 'ninja' 'base-devel' 'git')
+makedepends=('clang' 'cmake' 'ninja' 'base-devel' 'git' 'patchelf')
 options=('!lto')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/mzainulabideendev/Retro-TV/archive/refs/tags/v$pkgver.tar.gz")
 # sha256 for this source cannot be computed yet because the v$pkgver release
@@ -33,6 +33,17 @@ build() {
     cd "$srcdir/$pkgname"
     flutter pub get
     flutter build linux --release
+
+    # Flutter bakes an absolute build-host path into the RUNPATH of the bundled
+    # plugin libraries; it does not exist on a user's machine. Rewrite it to
+    # $ORIGIN-relative paths (see scripts/common.sh:normalize_runpath).
+    local bundle=build/linux/x64/release/bundle so
+    while IFS= read -r -d '' so; do
+        patchelf --remove-rpath "$so" 2>/dev/null || true
+        patchelf --set-rpath '$ORIGIN' "$so"
+    done < <(find "$bundle/lib" -type f -name '*.so*' -print0)
+    patchelf --remove-rpath "$bundle/retro_tv" 2>/dev/null || true
+    patchelf --set-rpath '$ORIGIN/lib' "$bundle/retro_tv"
 }
 
 package() {

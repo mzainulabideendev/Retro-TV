@@ -25,6 +25,8 @@ mkdir -p "$STAGE/DEBIAN"
 cp -r "$BUNDLE_DIR/lib" "$STAGE$LIBDIR/"
 cp -r "$BUNDLE_DIR/data" "$STAGE$LIBDIR/"
 install -m755 "$BUNDLE_DIR/retro_tv" "$STAGE$LIBDIR/retro_tv"
+# Drop the build-host RUNPATH baked in by Flutter (see common.sh).
+normalize_runpath "$STAGE$LIBDIR"
 # Relative symlink (../lib/retro-tv/retro_tv) so the same .deb also works when
 # unpacked into /app by the Flatpak manifest (/app/bin -> /app/lib/retro-tv).
 ln -s "../lib/retro-tv/retro_tv" "$STAGE$PREFIX/bin/retro_tv"

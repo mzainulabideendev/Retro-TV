@@ -21,9 +21,16 @@ rm -rf "$TOPDIR"
 mkdir -p "$TOPDIR/SPECS" "$TOPDIR/SOURCES" "$TOPDIR/BUILD" "$TOPDIR/RPMS" "$TOPDIR/SRPMS"
 cp "$SPEC" "$TOPDIR/SPECS/"
 
+# Work on a copy of the bundle so the RUNPATH rewrite (absolute build-host path
+# -> $ORIGIN) never touches the artifact produced by build-linux.sh.
+NORMALIZED="$BUILD_DIR/rpm-bundle"
+rm -rf "$NORMALIZED"
+cp -r "$BUNDLE_DIR" "$NORMALIZED"
+normalize_runpath "$NORMALIZED"
+
 # Bundle tarball with top directory normalized to "bundle".
-tar -C "$BUNDLE_DIR/.." -czf "$TOPDIR/SOURCES/retro-tv-linux-bundle.tar.gz" \
-    --transform 's#^[^/]*#bundle#' $(basename "$BUNDLE_DIR")
+tar -C "$NORMALIZED/.." -czf "$TOPDIR/SOURCES/retro-tv-linux-bundle.tar.gz" \
+    --transform 's#^[^/]*#bundle#' "$(basename "$NORMALIZED")"
 
 cp "$ROOT_DIR/linux/runner/resources/com.retrotv.retro_tv.desktop" "$TOPDIR/SOURCES/"
 cp "$ROOT_DIR/linux/runner/resources/app_icon.png" "$TOPDIR/SOURCES/"

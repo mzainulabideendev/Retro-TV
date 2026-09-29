@@ -1,0 +1,15 @@
+# Debian control data must be LF-terminated (dpkg-deb rejects a missing final
+# newline in multi-line fields such as Description).
+packaging/deb/control text eol=lf
+packaging/deb/copyright text eol=lf
+packaging/deb/postinst text eol=lf
+packaging/deb/postrm text eol=lf
+
+# Shell scripts and packaging helpers run inside Linux CI containers.
+*.sh text eol=lf
+PKGBUILD text eol=lf
+*.spec text eol=lf
+
+# Flatpak / workflow YAML.
+*.yml text eol=lf
+*.yaml text eol=lf
