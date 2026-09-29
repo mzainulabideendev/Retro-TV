@@ -27,6 +27,7 @@ NORMALIZED="$BUILD_DIR/rpm-bundle"
 rm -rf "$NORMALIZED"
 cp -r "$BUNDLE_DIR" "$NORMALIZED"
 normalize_runpath "$NORMALIZED"
+ensure_build_ids "$NORMALIZED"
 
 # Bundle tarball with top directory normalized to "bundle".
 tar -C "$NORMALIZED/.." -czf "$TOPDIR/SOURCES/retro-tv-linux-bundle.tar.gz" \

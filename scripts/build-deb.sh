@@ -34,14 +34,15 @@ ln -s "../lib/retro-tv/retro_tv" "$STAGE$PREFIX/bin/retro_tv"
 install -m644 "$ROOT_DIR/linux/runner/resources/com.retrotv.retro_tv.desktop" "$STAGE$PREFIX/share/applications/com.retrotv.retro_tv.desktop"
 install -m644 "$ROOT_DIR/linux/runner/resources/app_icon.png" "$STAGE$PREFIX/share/icons/hicolor/192x192/apps/retro-tv.png"
 install -m644 "$ROOT_DIR/packaging/com.retrotv.retro_tv.metainfo.xml" "$STAGE$PREFIX/share/metainfo/com.retrotv.retro_tv.metainfo.xml"
-install -m644 "$ROOT_DIR/LICENSE" "$STAGE$PREFIX/share/doc/retro-tv/copyright"
+install -m644 "$ROOT_DIR/packaging/deb/copyright" "$STAGE$PREFIX/share/doc/retro-tv/copyright"
 
 # Debian control: fill in the real version and computed installed size.
 sed -e "s/^Version: .*/Version: $DEB_VERSION/" "$ROOT_DIR/packaging/deb/control" > "$STAGE/DEBIAN/control"
 INSTALLED_SIZE="$(du -sk "$STAGE" | cut -f1)"
 sed -i -e "s/^Installed-Size: .*/Installed-Size: $INSTALLED_SIZE/" "$STAGE/DEBIAN/control"
-install -m644 "$ROOT_DIR/packaging/deb/postinst" "$STAGE/DEBIAN/postinst"
-install -m644 "$ROOT_DIR/packaging/deb/postrm" "$STAGE/DEBIAN/postrm"
+# dpkg-deb requires maintainer scripts to be executable (0755).
+install -m755 "$ROOT_DIR/packaging/deb/postinst" "$STAGE/DEBIAN/postinst"
+install -m755 "$ROOT_DIR/packaging/deb/postrm" "$STAGE/DEBIAN/postrm"
 
 dpkg-deb --build --root-owner-group "$STAGE" "$OUT"
 log "built $OUT"

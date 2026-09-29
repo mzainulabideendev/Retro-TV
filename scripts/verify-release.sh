@@ -46,6 +46,11 @@ check "dpkg-deb --info '$PACKAGES_DIR/$DEB_NAME'"
 check "dpkg-sig --verify '$PACKAGES_DIR/$DEB_NAME'"
 
 echo "== .rpm integrity and signature =="
+# rpm --checksig resolves the signer against RPM's own key database, which does
+# not automatically see the keyring that setup-gpg.sh imported into gpg.
+if command -v rpm >/dev/null 2>&1; then
+    rpm --import "$REPOSITORY_DIR/apt/retro-tv-archive-keyring.gpg" 2>/dev/null || true
+fi
 check "rpm --checksig '$PACKAGES_DIR/$RPM_NAME'"
 
 echo "== bundle layout inside deb =="

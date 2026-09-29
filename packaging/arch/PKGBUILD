@@ -14,7 +14,9 @@ pkgdesc="Retro-styled IPTV / YouTube streaming TV app (native Linux build)"
 arch=('x86_64')
 url="https://mzainulabideendev.github.io/Retro-TV/"
 license=('MIT')
-depends=('gtk3' 'libmpv' 'gcc-libs')
+# On Arch the mpv library is provided by the 'mpv' package (it provides
+# libmpv.so=2-64); there is no separate 'libmpv' package.
+depends=('gtk3' 'mpv' 'gcc-libs')
 makedepends=('clang' 'cmake' 'ninja' 'base-devel' 'git' 'patchelf')
 options=('!lto')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/mzainulabideendev/Retro-TV/archive/refs/tags/v$pkgver.tar.gz")

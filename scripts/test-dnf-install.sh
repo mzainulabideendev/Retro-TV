@@ -32,7 +32,9 @@ trap cleanup EXIT
 
 echo "[1/6] resolve metadata"
 dnf makecache || { echo "test-dnf-install: dnf makecache FAILED" >&2; exit 1; }
-dnf repoquery retro-tv || { echo "test-dnf-install: package not found in repo" >&2; exit 1; }
+# `dnf list` is part of core dnf; `repoquery` needs dnf-plugins-core which is
+# not present in the minimal CI image.
+dnf list --available retro-tv || { echo "test-dnf-install: package not found in repo" >&2; exit 1; }
 
 echo "[2/6] install retro-tv"
 dnf install -y retro-tv || { echo "test-dnf-install: dnf install FAILED" >&2; exit 1; }

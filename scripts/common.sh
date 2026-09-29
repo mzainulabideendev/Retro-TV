@@ -51,3 +51,16 @@ normalize_runpath() {
     patchelf --remove-rpath "$root/retro_tv" 2>/dev/null || true
     patchelf --set-rpath '$ORIGIN/lib' "$root/retro_tv"
 }
+
+# rpmbuild's elf dependency generator fails with "Missing build-id" for binaries
+# that have no GNU build-id note. patchelf and Flutter's prebuilt plugin
+# libraries can end up in that state, so re-add an id where it is missing.
+ensure_build_ids() {
+    local root="$1" f
+    command -v elfbuildid >/dev/null 2>&1 || die "elfbuildid not found (dnf: elfutils)"
+    while IFS= read -r -d '' f; do
+        if ! readelf -n "$f" 2>/dev/null | grep -q "Build ID"; then
+            elfbuildid -q "$f"
+        fi
+    done < <(find "$root" -type f \( -name '*.so*' -o -name 'retro_tv' \) -print0 2>/dev/null)
+}
