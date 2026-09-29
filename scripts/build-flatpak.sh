@@ -177,7 +177,7 @@ set -euo pipefail
 set -x
 
 flatpak run --user org.flatpak.Builder \
-    --user --install-deps-from=flathub --ccache --force-clean \
+    --user --install --install-deps-from=flathub --ccache --force-clean \
     build/flatpak-build flatpak/com.retrotv.retro_tv.yml
 BUILDER_RESULT=$?
 if [ $BUILDER_RESULT -ne 0 ]; then
@@ -238,7 +238,7 @@ FLATPAK_SCRIPT_EOF
 else
     log "build-flatpak: WARNING: dbus-run-session not found, attempting without" >&2
     flatpak run --user org.flatpak.Builder \
-        --user --install-deps-from=flathub --ccache --force-clean \
+        --user --install --install-deps-from=flathub --ccache --force-clean \
         build/flatpak-build flatpak/com.retrotv.retro_tv.yml
     BUILDER_RESULT=$?
     if [ $BUILDER_RESULT -ne 0 ]; then
