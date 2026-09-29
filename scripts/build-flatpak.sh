@@ -162,40 +162,50 @@ chmod 700 "$XDG_RUNTIME_DIR"
 # Start a D-Bus session for headless flatpak-builder AND bundle creation
 if command -v dbus-run-session >/dev/null 2>&1; then
     log "build-flatpak: starting dbus-run-session for flatpak-builder and bundle" >&2
-    DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus" \
-    dbus-run-session -- bash <<'FLATPAK_SCRIPT'
-        set -euo pipefail
-        flatpak run --user org.flatpak.Builder \
-            --user --install-deps-from=flathub --ccache --force-clean \
-            build/flatpak-build flatpak/com.retrotv.retro_tv.yml
-        BUILDER_RESULT=$?
-        if [ $BUILDER_RESULT -ne 0 ]; then
-            echo "[build] ERROR: flatpak-builder failed with exit code $BUILDER_RESULT" >&2
-            exit $BUILDER_RESULT
-        fi
-        echo "[build] build-flatpak: flatpak-builder completed" >&2
+    DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 
-        mkdir -p '"$PACKAGES_DIR"'
-        echo "[build] build-flatpak: creating flatpak bundle" >&2
-        
-        # Detect the correct branch in the repo (not always 'master')
-        BRANCH=$(flatpak remote-ls --user --repo="$HOME/.local/share/flatpak/repo" 2>/dev/null | grep "com.retrotv.retro_tv" | head -1 | awk '{print $1}' | sed 's|.*/||')
-        if [ -z "$BRANCH" ]; then
-            BRANCH="master"
-        fi
-        echo "[build] Using branch: $BRANCH" >&2
-        
-        flatpak build-bundle "$HOME/.local/share/flatpak/repo" \
-            '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"' \
-            com.retrotv.retro_tv "$BRANCH"
-        BUNDLE_RESULT=$?
-        if [ $BUNDLE_RESULT -ne 0 ]; then
-            echo "[build] ERROR: flatpak build-bundle failed with exit code $BUNDLE_RESULT" >&2
-            exit $BUNDLE_RESULT
-        fi
-        echo "[build] built '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"'" >&2
-FLATPAK_SCRIPT
+    # Write the flatpak build script to a temp file to avoid quoting issues
+    FLATPAK_SCRIPT=$(mktemp /tmp/flatpak-build-script.XXXXXX)
+    cat > "$FLATPAK_SCRIPT" <<'FLATPAK_SCRIPT_EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+flatpak run --user org.flatpak.Builder \
+    --user --install-deps-from=flathub --ccache --force-clean \
+    build/flatpak-build flatpak/com.retrotv.retro_tv.yml
+BUILDER_RESULT=$?
+if [ $BUILDER_RESULT -ne 0 ]; then
+    echo "[build] ERROR: flatpak-builder failed with exit code $BUILDER_RESULT" >&2
+    exit $BUILDER_RESULT
+fi
+echo "[build] build-flatpak: flatpak-builder completed" >&2
+
+mkdir -p '"$PACKAGES_DIR"'
+echo "[build] build-flatpak: creating flatpak bundle" >&2
+
+# Detect the correct branch in the repo (not always 'master')
+BRANCH=$(flatpak remote-ls --user --repo="$HOME/.local/share/flatpak/repo" 2>/dev/null | grep "com.retrotv.retro_tv" | head -1 | awk '{print $1}' | sed 's|.*/||')
+if [ -z "$BRANCH" ]; then
+    BRANCH="master"
+fi
+echo "[build] Using branch: $BRANCH" >&2
+
+flatpak build-bundle "$HOME/.local/share/flatpak/repo" \
+    '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"' \
+    com.retrotv.retro_tv "$BRANCH"
+BUNDLE_RESULT=$?
+if [ $BUNDLE_RESULT -ne 0 ]; then
+    echo "[build] ERROR: flatpak build-bundle failed with exit code $BUNDLE_RESULT" >&2
+    exit $BUNDLE_RESULT
+fi
+echo "[build] built '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"'" >&2
+FLATPAK_SCRIPT_EOF
+
+    chmod +x "$FLATPAK_SCRIPT"
+    DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus" \
+    dbus-run-session -- bash "$FLATPAK_SCRIPT"
     BUILDER_RESULT=$?
+    rm -f "$FLATPAK_SCRIPT"
     if [ $BUILDER_RESULT -ne 0 ]; then
         log "build-flatpak: ERROR: flatpak-builder/bundle failed with exit code $BUILDER_RESULT" >&2
         exit $BUILDER_RESULT
