@@ -232,16 +232,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends apt-utils createrepo-c rpm gnupg
           
-          echo "[build] Installing dpkg-sig from source..."
-          # dpkg-sig is not in Ubuntu 24.04 repos; build from source
-          sudo apt-get install -y --no-install-recommends build-essential debhelper devscripts
-          cd /tmp
-          wget -q "http://archive.ubuntu.com/ubuntu/pool/universe/d/dpkg-sig/dpkg-sig_0.13.1+git20210118-1.dsc" -O dpkg-sig.dsc
-          wget -q "http://archive.ubuntu.com/ubuntu/pool/universe/d/dpkg-sig/dpkg-sig_0.13.1+git20210118-1.tar.xz" -O dpkg-sig_0.13.1+git20210118-1.tar.xz
-          dpkg-source -x dpkg-sig.dsc
-          cd dpkg-sig-*/
-          dpkg-buildpackage -us -uc -b
-          sudo dpkg -i ../dpkg-sig_*.deb
+          echo "[build] Installing dpkg-sig from Ubuntu 22.04 package..."
+          # dpkg-sig is not in Ubuntu 24.04 repos; install from Ubuntu 22.04 (jammy) package
+          # The package is architecture-independent (all) so it works on Ubuntu 24.04
+          wget -q "https://archive.ubuntu.com/ubuntu/pool/universe/d/dpkg-sig/dpkg-sig_0.13.1+git20210118-1_all.deb" -O /tmp/dpkg-sig.deb || {
+            echo "ERROR: Failed to download dpkg-sig" >&2
+            exit 1
+          }
+          sudo dpkg -i /tmp/dpkg-sig.deb
+          sudo apt-get install -f -y
           
           echo "[build] Verifying repository tooling..."
           command -v gpg >/dev/null 2>&1 || {
