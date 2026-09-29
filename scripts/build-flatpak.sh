@@ -181,41 +181,42 @@ if [ $BUILDER_RESULT -ne 0 ]; then
 fi
 echo "[build] build-flatpak: flatpak-builder completed" >&2
 
-mkdir -p '"$PACKAGES_DIR"'
-echo "[build] build-flatpak: creating flatpak bundle" >&2
-
-# Detect the correct branch in the repo (not always 'master')
-BRANCH=$(flatpak remote-ls --user --repo="$HOME/.local/share/flatpak/repo" 2>/dev/null | grep "com.retrotv.retro_tv" | head -1 | awk '{print $1}' | sed 's|.*/||')
-if [ -z "$BRANCH" ]; then
-    BRANCH="master"
-fi
-echo "[build] Using branch: $BRANCH" >&2
-
 echo "[build] ======== FINAL FLATPAK BUNDLE DEBUG ==========" >&2
-echo "[build] PACKAGES_DIR='$PACKAGES_DIR'" >&2
-echo "[build] HOME='$HOME'" >&2
-echo "[build] BRANCH='$BRANCH'" >&2
-echo "[build] VERSION_NAME='$VERSION_NAME'" >&2
-echo "[build] VERSION_CODE='$VERSION_CODE'" >&2
-echo "[build] PACKAGES_DIR='$PACKAGES_DIR'" >&2
-echo "[build] flatpak repo path: $HOME/.local/share/flatpak/repo" >&2
-ls -la "$HOME/.local/share/flatpak/repo" >&2 || echo "[build] repo dir listing failed" >&2
-ostree refs --repo="$HOME/.local/share/flatpak/repo" >&2 || echo "[build] ostree refs failed" >&2
-echo "[build] ======== END DEBUG ==========" >&2
+        echo "[build] PACKAGES_DIR='$PACKAGES_DIR'" >&2
+        echo "[build] HOME='$HOME'" >&2
+        echo "[build] VERSION_NAME='$VERSION_NAME'" >&2
+        echo "[build] VERSION_CODE='$VERSION_CODE'" >&2
+        echo "[build] PACKAGES_DIR='$PACKAGES_DIR'" >&2
+        echo "[build] flatpak repo path: $HOME/.local/share/flatpak/repo" >&2
+        ls -la "$HOME/.local/share/flatpak/repo" >&2 || echo "[build] repo dir listing failed" >&2
+        ostree refs --repo="$HOME/.local/share/flatpak/repo" >&2 || echo "[build] ostree refs failed" >&2
+        echo "[build] ======== END DEBUG ==========" >&2
 
-# Use set +e to capture the exit code explicitly
-set +e
-flatpak build-bundle "$HOME/.local/share/flatpak/repo" \
-    '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"' \
-    com.retrotv.retro_tv "$BRANCH"
-BUNDLE_RESULT=$?
-set -e
-echo "[build] flatpak build-bundle exit code: $BUNDLE_RESULT" >&2
-if [ $BUNDLE_RESULT -ne 0 ]; then
-    echo "[build] ERROR: flatpak build-bundle failed with exit code $BUNDLE_RESULT" >&2
-    exit $BUNDLE_RESULT
-fi
-echo "[build] built '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"'" >&2
+        # Find the actual application ref from the OSTree repository (authoritative source)
+        APP_REF=$(ostree refs --repo="$HOME/.local/share/flatpak/repo" | grep "^app/com.retrotv.retro_tv/" | head -1)
+        if [ -z "$APP_REF" ]; then
+            echo "[build] ERROR: No application ref found for com.retrotv.retro_tv in OSTree repository" >&2
+            exit 1
+        fi
+        echo "[build] Found application ref: $APP_REF" >&2
+        
+        # Extract branch from the ref (format: app/com.retrotv.retro_tv/x86_64/<branch>)
+        BRANCH="${APP_REF##*/}"
+        if [ -z "$BRANCH" ]; then
+            echo "[build] ERROR: Could not extract branch from ref: $APP_REF" >&2
+            exit 1
+        fi
+        echo "[build] Using branch: $BRANCH" >&2
+        
+        flatpak build-bundle "$HOME/.local/share/flatpak/repo" \
+            '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"' \
+            com.retrotv.retro_tv "$BRANCH"
+        BUNDLE_RESULT=$?
+        if [ $BUNDLE_RESULT -ne 0 ]; then
+            echo "[build] ERROR: flatpak build-bundle failed with exit code $BUNDLE_RESULT" >&2
+            exit $BUNDLE_RESULT
+        fi
+        echo "[build] built '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"'" >&2
 FLATPAK_SCRIPT_EOF
 
     chmod +x "$FLATPAK_SCRIPT"
@@ -241,10 +242,19 @@ else
 
     mkdir -p "$PACKAGES_DIR"
     log "build-flatpak: creating flatpak bundle" >&2
-    # Detect the correct branch in the repo (not always 'master')
-    BRANCH=$(flatpak remote-ls --user --repo="$HOME/.local/share/flatpak/repo" 2>/dev/null | grep "com.retrotv.retro_tv" | head -1 | awk '{print $1}' | sed 's|.*/||')
+    # Find the actual application ref from the OSTree repository (authoritative source)
+    APP_REF=$(ostree refs --repo="$HOME/.local/share/flatpak/repo" | grep "^app/com.retrotv.retro_tv/" | head -1)
+    if [ -z "$APP_REF" ]; then
+        log "build-flatpak: ERROR: No application ref found for com.retrotv.retro_tv in OSTree repository" >&2
+        exit 1
+    fi
+    log "build-flatpak: Found application ref: $APP_REF" >&2
+    
+    # Extract branch from the ref (format: app/com.retrotv.retro_tv/x86_64/<branch>)
+    BRANCH="${APP_REF##*/}"
     if [ -z "$BRANCH" ]; then
-        BRANCH="master"
+        log "build-flatpak: ERROR: Could not extract branch from ref: $APP_REF" >&2
+        exit 1
     fi
     log "build-flatpak: using branch: $BRANCH" >&2
     
