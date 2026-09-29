@@ -217,15 +217,23 @@ jobs:
           path: build/packages
       - name: Install repository tooling
         run: |
+          set -x
           sudo apt-get update -qq
           sudo apt-get install -y -qq apt-utils createrepo-c rpm
+          echo "[build] Installing dpkg-sig from Ubuntu 22.04 package..."
           # dpkg-sig is not in Ubuntu 24.04 repos; install from Ubuntu 22.04 (jammy) package
-          # Download and install dpkg-sig from Ubuntu 22.04 (jammy) repository
-          wget -q "http://archive.ubuntu.com/ubuntu/pool/universe/d/dpkg-sig/dpkg-sig_0.13.1+git20210118-1_all.deb" -O /tmp/dpkg-sig.deb
+          echo "[build] Downloading dpkg-sig..."
+          wget -q "http://archive.ubuntu.com/ubuntu/pool/universe/d/dpkg-sig/dpkg-sig_0.13.1+git20210118-1_all.deb" -O /tmp/dpkg-sig.deb || {
+            echo "ERROR: Failed to download dpkg-sig" >&2
+            exit 1
+          }
+          echo "[build] Installing dpkg-sig..."
           sudo dpkg -i /tmp/dpkg-sig.deb
           sudo apt-get install -f -y
           # Verify dpkg-sig is available
           command -v dpkg-sig >/dev/null || { echo "ERROR: dpkg-sig installation failed"; exit 1; }
+          echo "[build] dpkg-sig installed successfully"
+          set +x
       - name: Import GPG signing key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
