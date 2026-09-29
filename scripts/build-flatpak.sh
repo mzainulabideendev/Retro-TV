@@ -177,9 +177,17 @@ if command -v dbus-run-session >/dev/null 2>&1; then
 
         mkdir -p '"$PACKAGES_DIR"'
         echo "[build] build-flatpak: creating flatpak bundle" >&2
+        
+        # Detect the correct branch in the repo (not always 'master')
+        BRANCH=$(flatpak remote-ls --user --repo="$HOME/.local/share/flatpak/repo" 2>/dev/null | grep "com.retrotv.retro_tv" | head -1 | awk "{print \\$1}" | sed "s/.*\\///")
+        if [ -z "$BRANCH" ]; then
+            BRANCH="master"
+        fi
+        echo "[build] Using branch: $BRANCH" >&2
+        
         flatpak build-bundle "$HOME/.local/share/flatpak/repo" \
             '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"' \
-            com.retrotv.retro_tv master
+            com.retrotv.retro_tv "$BRANCH"
         BUNDLE_RESULT=$?
         if [ $BUNDLE_RESULT -ne 0 ]; then
             echo "[build] ERROR: flatpak build-bundle failed with exit code $BUNDLE_RESULT" >&2
@@ -192,7 +200,6 @@ if command -v dbus-run-session >/dev/null 2>&1; then
         log "build-flatpak: ERROR: flatpak-builder/bundle failed with exit code $BUILDER_RESULT" >&2
         exit $BUILDER_RESULT
     fi
-else
     log "build-flatpak: WARNING: dbus-run-session not found, attempting without" >&2
     flatpak run --user org.flatpak.Builder \
         --user --install-deps-from=flathub --ccache --force-clean \
