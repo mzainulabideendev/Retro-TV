@@ -59,19 +59,28 @@ ensure_build_ids() {
     local root="$1" f cmd="" count=0
     # elfbuildid (Fedora elfutils) or eu-build-id (older/other distros) can add
     # a random build-id to an ELF file that lacks one.
-    for c in elfbuildid eu-build-id; do
+    for c in elfbuildid eu-build-id /usr/bin/elfbuildid /usr/bin/eu-build-id; do
         if command -v "$c" >/dev/null 2>&1; then
             cmd="$c"
             break
         fi
     done
+    if [ -z "$cmd" ]; then
+        log "warning: no elfbuildid/eu-build-id found in PATH; searching /usr/bin..."
+        if [ -x /usr/bin/elfbuildid ]; then cmd="/usr/bin/elfbuildid"; fi
+        if [ -z "$cmd" ] && [ -x /usr/bin/eu-build-id ]; then cmd="/usr/bin/eu-build-id"; fi
+    fi
     [ -n "$cmd" ] || { log "warning: no elfbuildid/eu-build-id found; skipping build-id injection"; return 0; }
     log "ensure_build_ids: using $cmd on $root"
+    log "ensure_build_ids: scanning for ELF files..."
     while IFS= read -r -d '' f; do
+        log "ensure_build_ids: checking $f"
         if ! readelf -n "$f" 2>/dev/null | grep -q "Build ID"; then
             log "ensure_build_ids: adding build-id to $f"
             "$cmd" -q "$f"
             count=$((count + 1))
+        else
+            log "ensure_build_ids: $f already has build-id"
         fi
     done < <(find "$root" -type f \( -name '*.so*' -o -name 'retro_tv' \) -print0 2>/dev/null)
     log "ensure_build_ids: processed $count file(s)"
