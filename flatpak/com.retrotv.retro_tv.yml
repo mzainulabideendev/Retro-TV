@@ -27,7 +27,19 @@ modules:
     buildsystem: simple
     build-commands:
       - ar -x retro-tv.deb
-      - tar -xvf data.tar.xz
+      # Debian packages can use various compression formats (xz, zst, gz, etc.)
+      # Detect the actual data.tar.* member and extract it regardless of compression.
+      - |
+        set -euo pipefail
+        DATA_TAR="$(find . -maxdepth 1 -type f -name 'data.tar.*' -print -quit)"
+        if [ -z "$DATA_TAR" ]; then
+            echo "ERROR: Debian package does not contain data.tar.*" >&2
+            echo "Contents:" >&2
+            ls -la >&2
+            exit 1
+        fi
+        echo "Extracting detected archive: $DATA_TAR" >&2
+        tar -xf "$DATA_TAR"
       - rm -rf usr/share/doc usr/share/lintian
       - cp -r usr/* /app/
     sources:
