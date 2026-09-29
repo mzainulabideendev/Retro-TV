@@ -159,16 +159,37 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-$UID}"
 mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 
-# Start a D-Bus session for headless flatpak-builder
+# Start a D-Bus session for headless flatpak-builder AND bundle creation
 if command -v dbus-run-session >/dev/null 2>&1; then
-    log "build-flatpak: starting dbus-run-session for flatpak-builder" >&2
+    log "build-flatpak: starting dbus-run-session for flatpak-builder and bundle" >&2
     DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus" \
-    dbus-run-session -- flatpak run --user org.flatpak.Builder \
-        --user --install-deps-from=flathub --ccache --force-clean \
-        build/flatpak-build flatpak/com.retrotv.retro_tv.yml
+    dbus-run-session -- bash -c '
+        set -euo pipefail
+        flatpak run --user org.flatpak.Builder \
+            --user --install-deps-from=flathub --ccache --force-clean \
+            build/flatpak-build flatpak/com.retrotv.retro_tv.yml
+        BUILDER_RESULT=$?
+        if [ $BUILDER_RESULT -ne 0 ]; then
+            echo "[build] ERROR: flatpak-builder failed with exit code $BUILDER_RESULT" >&2
+            exit $BUILDER_RESULT
+        fi
+        log "build-flatpak: flatpak-builder completed" >&2
+
+        mkdir -p '"$PACKAGES_DIR"'
+        log "build-flatpak: creating flatpak bundle" >&2
+        flatpak build-bundle "$HOME/.local/share/flatpak/repo" \
+            '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"' \
+            com.retrotv.retro_tv master
+        BUNDLE_RESULT=$?
+        if [ $BUNDLE_RESULT -ne 0 ]; then
+            echo "[build] ERROR: flatpak build-bundle failed with exit code $BUNDLE_RESULT" >&2
+            exit $BUNDLE_RESULT
+        fi
+        log "built '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"'" >&2
+    '
     BUILDER_RESULT=$?
     if [ $BUILDER_RESULT -ne 0 ]; then
-        log "build-flatpak: ERROR: flatpak-builder failed with exit code $BUILDER_RESULT" >&2
+        log "build-flatpak: ERROR: flatpak-builder/bundle failed with exit code $BUILDER_RESULT" >&2
         exit $BUILDER_RESULT
     fi
 else
@@ -181,12 +202,18 @@ else
         log "build-flatpak: ERROR: flatpak-builder failed with exit code $BUILDER_RESULT" >&2
         exit $BUILDER_RESULT
     fi
+    log "build-flatpak: flatpak-builder completed" >&2
+
+    mkdir -p "$PACKAGES_DIR"
+    log "build-flatpak: creating flatpak bundle" >&2
+    flatpak build-bundle "$HOME/.local/share/flatpak/repo" \
+        "$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak" \
+        com.retrotv.retro_tv master
+    BUNDLE_RESULT=$?
+    if [ $BUNDLE_RESULT -ne 0 ]; then
+        log "build-flatpak: ERROR: flatpak build-bundle failed with exit code $BUNDLE_RESULT" >&2
+        exit $BUNDLE_RESULT
+    fi
+    log "built $PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak" >&2
 fi
 log "build-flatpak: flatpak-builder completed" >&2
-
-mkdir -p "$PACKAGES_DIR"
-log "build-flatpak: creating flatpak bundle"
-flatpak build-bundle "$HOME/.local/share/flatpak/repo" \
-    "$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak" \
-    com.retrotv.retro_tv master || die "flatpak build-bundle failed"
-log "built $PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"
