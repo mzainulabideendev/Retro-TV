@@ -173,10 +173,10 @@ if command -v dbus-run-session >/dev/null 2>&1; then
             echo "[build] ERROR: flatpak-builder failed with exit code $BUILDER_RESULT" >&2
             exit $BUILDER_RESULT
         fi
-        log "build-flatpak: flatpak-builder completed" >&2
+        echo "[build] build-flatpak: flatpak-builder completed" >&2
 
         mkdir -p '"$PACKAGES_DIR"'
-        log "build-flatpak: creating flatpak bundle" >&2
+        echo "[build] build-flatpak: creating flatpak bundle" >&2
         flatpak build-bundle "$HOME/.local/share/flatpak/repo" \
             '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"' \
             com.retrotv.retro_tv master
@@ -185,7 +185,7 @@ if command -v dbus-run-session >/dev/null 2>&1; then
             echo "[build] ERROR: flatpak build-bundle failed with exit code $BUNDLE_RESULT" >&2
             exit $BUNDLE_RESULT
         fi
-        log "built '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"'" >&2
+        echo "[build] built '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"'" >&2
     '
     BUILDER_RESULT=$?
     if [ $BUILDER_RESULT -ne 0 ]; then
