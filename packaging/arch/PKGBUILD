@@ -33,6 +33,10 @@ prepare() {
 
 build() {
     cd "$srcdir/$pkgname"
+    # git refuses to operate on the Flutter SDK extracted as root; allow it.
+    git config --global --add safe.directory /opt/flutter-sdk
+    git config --global --add safe.directory '*'
+
     flutter pub get
     flutter build linux --release
 

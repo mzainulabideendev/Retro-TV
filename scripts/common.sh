@@ -56,7 +56,7 @@ normalize_runpath() {
 # that have no GNU build-id note. patchelf (and Flutter's prebuilt plugin
 # libraries) can end up in that state, so re-add an id where it is missing.
 ensure_build_ids() {
-    local root="$1" f cmd
+    local root="$1" f cmd=""
     # elfbuildid (Fedora elfutils) or eu-build-id (older/other distros) can add
     # a random build-id to an ELF file that lacks one.
     for c in elfbuildid eu-build-id; do
