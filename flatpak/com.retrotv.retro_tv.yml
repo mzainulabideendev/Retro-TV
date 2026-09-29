@@ -1,0 +1,36 @@
+# Retro TV Flatpak manifest.
+#
+# Strategy: the Flutter Linux bundle is built and packed into a .deb in CI
+# (scripts/build-deb.sh). This manifest extracts that REAL .deb artifact into
+# /app and links it against the libmpv built by libmpv.yml, exactly like the
+# proven yuki-iptv / media_kit setups on Flathub.
+app-id: com.retrotv.retro_tv
+runtime: org.kde.Platform
+runtime-version: '6.10'
+sdk: org.kde.Sdk
+command: retro_tv
+rename-icon: retro-tv
+finish-args:
+  - --socket=x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --share=network
+  - --share=ipc
+  - --device=dri
+  - --own-name=org.mpris.MediaPlayer2.retro_tv.*
+  - --talk-name=org.freedesktop.ScreenSaver
+  - --talk-name=org.gnome.SessionManager
+modules:
+  - libmpv.yml
+
+  - name: retro-tv
+    buildsystem: simple
+    build-commands:
+      - ar -x retro-tv.deb
+      - tar -xvf data.tar.xz
+      - rm -rf usr/share/doc usr/share/lintian
+      - cp -r usr/* /app/
+    sources:
+      - type: file
+        path: ../build/packages/retro-tv_1.2.1-5_amd64.deb
+        dest-filename: retro-tv.deb

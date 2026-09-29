@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Retro TV
+GenericName=Live TV Player
+Comment=Retro-styled live TV streaming experience
+Exec=retro_tv
+Icon=retro-tv
+Terminal=false
+Categories=AudioVideo;Player;
+Keywords=TV;video;streaming;retro;youtube;
+StartupNotify=true
+StartupWMClass=com.retrotv.retro_tv

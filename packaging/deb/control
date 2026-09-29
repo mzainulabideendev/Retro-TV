@@ -1,0 +1,13 @@
+Package: retro-tv
+Version: 1.2.1-5
+Section: video
+Priority: optional
+Architecture: amd64
+Maintainer: mzainulabideendev <mzainulabideendev@users.noreply.github.com>
+Depends: libgtk-3-0 (>= 3.10), libmpv2, libstdc++6
+Installed-Size: 60000
+Homepage: https://mzainulabideendev.github.io/Retro-TV/
+Description: Retro TV - retro-styled IPTV / YouTube streaming TV app
+ Retro TV is a Flutter desktop application that renders a nostalgic CRT
+ television look while playing YouTube live channels and IPTV-style streams.
+ This package installs the native Linux (amd64) build.

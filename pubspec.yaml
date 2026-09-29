@@ -1,5 +1,5 @@
 name: retro_tv
-description: "A new Flutter project."
+description: "Retro TV - a retro-styled live TV streaming experience built with Flutter."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -46,6 +46,26 @@ dependencies:
 
   # YouTube playback (web + mobile compatible iframe player)
   youtube_player_iframe: ^6.0.2
+
+  # Windows/Linux YouTube playback.
+  #
+  # The embed approach does not work on Windows: youtube_player_iframe and
+  # webview_flutter have no Windows implementation, and a WebView2-hosted
+  # embed is rejected by YouTube with error 153 ("Video player configuration
+  # error"). webview_flutter has no Linux implementation either, so the embed
+  # cannot render there at all. So on these desktop platforms the embed is
+  # bypassed entirely - youtube_explode negotiates the real progressive MP4
+  # stream URL and media_kit (libmpv) plays it. No embed means no 153.
+  youtube_explode_dart: ^3.1.0
+  media_kit: ^1.2.6
+  media_kit_video: ^2.0.1
+  # Ships the libmpv binaries that media_kit needs on Windows.
+  media_kit_libs_windows_video: ^1.0.11
+  # On Linux media_kit links against the system libmpv (libmpv.so.2); this
+  # package wires that linkage and is what makes libmpv available at runtime.
+  # Every Linux package for this app therefore declares a runtime dependency
+  # on the distro's libmpv package (libmpv2 / libmpv / libmpv.so.2).
+  media_kit_libs_linux: ^1.2.1
 
   # Local storage (volume/settings persistence)
   shared_preferences: 2.5.3
@@ -94,7 +114,8 @@ flutter:
   #   - images/a_dot_ham.jpeg
 
   assets:
-    - assets/images/developer_photo.jpg
+    - assets/icon/
+    - assets/images/
     - assets/lottie/
 
   # An image asset can refer to one or more resolution-specific "variants", see

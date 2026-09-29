@@ -126,3 +126,21 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+# Application metadata for desktop integration.
+#
+# The .desktop entry and the icon are shipped inside the build bundle so that
+# downstream Linux packaging targets (deb/rpm/arch/flatpak) can install them
+# into the standard system locations without re-deriving them.
+set(APP_RESOURCES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/runner/resources")
+
+# The .desktop entry in the bundle uses the bare executable name
+# (Exec=retro_tv). Each packaging target rewrites Exec= to the application's
+# real installed path (e.g. Exec=/opt/retro-tv/retro_tv).
+install(FILES "${APP_RESOURCES_DIR}/${APPLICATION_ID}.desktop"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime)
+
+install(FILES "${APP_RESOURCES_DIR}/app_icon.png"
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}/icons"
+  COMPONENT Runtime)

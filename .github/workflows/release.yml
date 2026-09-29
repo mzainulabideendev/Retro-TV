@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'Version name override, e.g. 1.2.2 (defaults to pubspec.yaml)'
+        required: false
+        type: string
+      version_code:
+        description: 'Build number override / Android versionCode (defaults to pubspec.yaml)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: '3.47.2'
+
+jobs:
+  resolve-version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.read.outputs.name }}
+      code: ${{ steps.read.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        shell: bash
+        run: |
+          raw=$(grep -E '^version:' pubspec.yaml | head -n1 | sed -E 's/^version:[[:space:]]*//')
+          name=${raw%%+*}
+          code=${raw##*+}
+          if [ -n "${{ inputs.version_name }}" ]; then name="${{ inputs.version_name }}"; fi
+          if [ -n "${{ inputs.version_code }}" ]; then code="${{ inputs.version_code }}"; fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+  windows-msix:
+    name: Windows MSIX (Microsoft Store)
+    needs: resolve-version
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Ensure Windows SDK is available
+        shell: pwsh
+        run: |
+          $found = Get-ChildItem "$env:ProgramFiles(x86)\Windows Kits\10\bin" -Recurse -Filter makeappx.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $found) { choco install windows-sdk-10.0.22621 -y --no-progress }
+      - run: flutter pub get
+      - name: Build Windows release
+        run: flutter build windows --release --build-name ${{ needs.resolve-version.outputs.name }} --build-number ${{ needs.resolve-version.outputs.code }}
+      - name: Regenerate MSIX logo assets
+        shell: pwsh
+        run: ./tool/generate_msix_assets.ps1
+      - name: Package MSIX
+        shell: pwsh
+        env:
+          MSIX_PACKAGE_NAME: ${{ vars.MSIX_PACKAGE_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+        run: ./tool/build_msix.ps1 -Version ${{ needs.resolve-version.outputs.name }}.${{ needs.resolve-version.outputs.code }}
+      - name: Create portable ZIP
+        shell: pwsh
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath "RetroTV-${{ needs.resolve-version.outputs.name }}-windows-x64-portable.zip" -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: retro-tv-windows
+          path: |
+            build/msix/*.msix
+            build/msix/*.cer
+            RetroTV-*-windows-x64-portable.zip
+          if-no-files-found: error
+
+  android-aab:
+    name: Android App Bundle (Google Play)
+    needs: resolve-version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Write release signing config
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_BASE64" || { echo "ANDROID_KEYSTORE_BASE64 secret is not set"; exit 1; }
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storePassword=$STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=upload-keystore.jks
+          EOF
+      - run: flutter pub get
+      - name: Build app bundle
+        run: flutter build appbundle --release --build-name ${{ needs.resolve-version.outputs.name }} --build-number ${{ needs.resolve-version.outputs.code }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: retro-tv-android-aab
+          path: build/app/outputs/bundle/release/*.aab
+          if-no-files-found: error
+      - name: Bundle target SDK level
+        shell: bash
+        run: |
+          manifest=$(find build/app/intermediates/merged_manifests -name AndroidManifest.xml | head -n1)
+          echo "manifest: $manifest"
+          grep -o 'android:targetSdkVersion="[0-9]*"' "$manifest" || true
+          grep -o 'android:minSdkVersion="[0-9]*"' "$manifest" || true

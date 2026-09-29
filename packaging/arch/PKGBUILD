@@ -1,0 +1,49 @@
+# Maintainer: mzainulabideendev <mzainulabideendev@users.noreply.github.com>
+# Arch Linux packaging (builds the Flutter Linux bundle from source with the official flutter package).
+
+pkgname=retro-tv
+pkgver=1.2.1
+pkgrel=5
+pkgdesc="Retro-styled IPTV / YouTube streaming TV app (native Linux build)"
+arch=('x86_64')
+url="https://mzainulabideendev.github.io/Retro-TV/"
+license=('MIT')
+depends=('gtk3' 'libmpv' 'libstdc++')
+makedepends=('flutter' 'clang' 'cmake' 'ninja' 'base-devel')
+options=('!lto')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/mzainulabideendev/Retro-TV/archive/refs/tags/v$pkgver.tar.gz")
+# sha256 for this source cannot be computed yet because the v$pkgver release
+# tag does not exist until the first tagged release (the archive is produced by
+# GitHub on the tag). SKIP is a valid PKGBUILD token meaning "do not verify";
+# replace it with the real '' value computed from the released archive once
+# v$pkgver exists:  curl -fsSL https://github.com/mzainulabideendev/Retro-TV/archive/refs/tags/v$pkgver.tar.gz | sha256sum
+sha256sums=('SKIP')
+
+prepare() {
+    cp -a "$srcdir/Retro-TV-$pkgver" "$srcdir/$pkgname"
+}
+
+build() {
+    cd "$srcdir/$pkgname"
+    flutter pub get
+    flutter build linux --release
+}
+
+package() {
+    cd "$srcdir/$pkgname"
+    local bundle=build/linux/x64/release/bundle
+
+    install -dm755 "$pkgdir/usr/lib/retro-tv" "$pkgdir/usr/bin"
+    cp -r "$bundle/lib" "$pkgdir/usr/lib/retro-tv/"
+    cp -r "$bundle/data" "$pkgdir/usr/lib/retro-tv/"
+    install -m755 "$bundle/retro_tv" "$pkgdir/usr/lib/retro-tv/retro_tv"
+    ln -s /usr/lib/retro-tv/retro_tv "$pkgdir/usr/bin/retro_tv"
+
+    install -Dm644 linux/runner/resources/com.retrotv.retro_tv.desktop \
+        "$pkgdir/usr/share/applications/com.retrotv.retro_tv.desktop"
+    install -Dm644 linux/runner/resources/app_icon.png \
+        "$pkgdir/usr/share/icons/hicolor/192x192/apps/retro-tv.png"
+    install -Dm644 packaging/com.retrotv.retro_tv.metainfo.xml \
+        "$pkgdir/usr/share/metainfo/com.retrotv.retro_tv.metainfo.xml"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

@@ -14,6 +14,24 @@ import 'scheduling_timezone.dart';
 
 enum PowerState { off, startingUp, on }
 
+/// True only for the Windows desktop target. Desktop has no pinch gesture,
+/// so the window zoom is driven by explicit controls instead.
+bool get isWindowsDesktop =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
+/// True for desktop targets that use the native direct-stream player
+/// ([NativeStreamYoutubePlayer]) instead of `youtube_player_iframe`.
+///
+/// On Windows that is because WebView2-hosted embeds are rejected by YouTube
+/// with error 153 and `webview_flutter` has no Windows implementation. On Linux
+/// `webview_flutter` supports only Android/iOS/macOS, so the iframe player has
+/// no video surface at all - the direct-stream player (media_kit + libmpv) is
+/// used there as well.
+bool get isNativeStreamDesktop =>
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux);
+
 /// Central state controller for the Retro TV experience: power, current
 /// channel, volume, mute, and the currently playing program.
 ///
@@ -50,6 +68,7 @@ class TvState extends ChangeNotifier {
   Timer? _digitTimer;
   Timer? _airSyncTimer;
   bool _fullscreen = false;
+  double _zoom = 1.0;
   final Set<String> _temporarilySkippedProgramIds = <String>{};
 
   PowerState get power => _power;
@@ -99,6 +118,18 @@ class TvState extends ChangeNotifier {
   String get digitBuffer => _digitBuffer;
   bool get fullscreen => _fullscreen;
 
+  /// Window zoom driven by the Windows-only zoom controls. 1.0 is the
+  /// normal size; the app is laid out in a smaller logical viewport and
+  /// scaled up, so the TV and the remote panel scale together.
+  /// 1.0 is the untouched picture.
+  double get zoom => _zoom;
+  bool get canZoomIn => _zoom < maxZoom - 0.001;
+  bool get canZoomOut => _zoom > minZoom + 0.001;
+
+  static const double minZoom = 0.5;
+  static const double maxZoom = 2.0;
+  static const double zoomStep = 0.1;
+
   Future<void> initialize() async {
     _loading = true;
     _error = null;
@@ -111,6 +142,9 @@ class TvState extends ChangeNotifier {
       _volume = prefs.getInt('tv_volume') ?? 50;
       _muted = prefs.getBool('tv_muted') ?? false;
       _reduceEffects = prefs.getBool('tv_reduce_effects') ?? false;
+      _zoom = (prefs.getDouble('tv_zoom') ?? 1.0)
+          .clamp(minZoom, maxZoom)
+          .toDouble();
       final savedStyleSlug = prefs.getString('tv_style_slug');
       final savedFilterId = prefs.getString('tv_screen_filter');
       _screenFilter = ScreenFilter.values.firstWhere(
@@ -738,6 +772,22 @@ class TvState extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('tv_reduce_effects', value);
   }
+
+  // ---------------------------------------------------------------
+  // Window zoom (Windows desktop controls)
+  // ---------------------------------------------------------------
+  Future<void> setZoom(double value) async {
+    final next = value.clamp(minZoom, maxZoom).toDouble();
+    if (next == _zoom) return;
+    _zoom = next;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('tv_zoom', _zoom);
+  }
+
+  Future<void> zoomIn() => setZoom(_zoom + zoomStep);
+  Future<void> zoomOut() => setZoom(_zoom - zoomStep);
+  Future<void> resetZoom() => setZoom(1.0);
 
   Future<void> refreshChannels() async {
     try {

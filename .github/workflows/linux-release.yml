@@ -1,0 +1,299 @@
+name: Linux Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+env:
+  FLUTTER_VERSION: '3.47.2'
+
+jobs:
+  resolve-version:
+    runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.version.outputs.name }}
+      code: ${{ steps.version.outputs.code }}
+      full: ${{ steps.version.outputs.full }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        run: |
+          line="$(grep -E '^version:' pubspec.yaml | head -n1)"
+          full="$(echo "$line" | sed -E 's/^version:[[:space:]]*//; s/[[:space:]]*$//')"
+          name="${full%%+*}"
+          code="${full##*+}"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$tag" != "$name" ]; then
+            echo "::warning::release tag $GITHUB_REF_NAME does not match pubspec version $full"
+          fi
+
+  test-build-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Dependencies
+        run: flutter pub get
+      - name: Analyze
+        run: flutter analyze --fatal-infos --fatal-warnings
+      - name: Test
+        run: flutter test
+      - name: Build Linux (release)
+        run: bash scripts/build-linux.sh
+      - name: Install smoke-test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb libmpv2
+      - name: Headless launch smoke test
+        run: bash scripts/launch-smoke-test.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-bundle
+          path: build/linux/x64/release/bundle
+          if-no-files-found: error
+
+  package-deb:
+    needs: test-build-linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-bundle
+          path: build/linux/x64/release/bundle
+      - name: Install dpkg tooling
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dpkg-dev
+      - name: Build .deb
+        run: bash scripts/build-deb.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb
+          path: build/packages/retro-tv_*.deb
+          if-no-files-found: error
+
+  package-rpm:
+    needs: test-build-linux
+    runs-on: ubuntu-24.04
+    container: fedora:42
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-bundle
+          path: build/linux/x64/release/bundle
+      - name: Install rpm-build
+        run: dnf -y install rpm-build
+      - name: Build .rpm
+        run: bash scripts/build-rpm.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm
+          path: build/packages/retro-tv-*.rpm
+          if-no-files-found: error
+
+  # Arch: rebuilds Flutter from source in the archlinux container (the same
+  # PKGBUILD published to the AUR), then installs the built package and checks
+  # the executable. Non-blocking: failures do not hold back the main release.
+  package-arch:
+    needs: test-build-linux
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: pacman -Sy --noconfirm --needed base-devel fakeroot clang cmake ninja git flutter
+      - name: Build PKGBUILD (non-root)
+        run: |
+          useradd -m build
+          chown -R build:build "$GITHUB_WORKSPACE"
+          su - build -c "cd '$GITHUB_WORKSPACE' && export PUB_CACHE='$GITHUB_WORKSPACE/.pub-cache' && bash scripts/build-arch.sh"
+      - name: Install and verify executable (pacman)
+        run: |
+          pacman -U --noconfirm build/packages/retro-tv-*.pkg.tar.zst
+          test -x /usr/bin/retro_tv || exit 1
+          test -x /usr/lib/retro-tv/retro_tv || exit 1
+          pacman -Rns --noconfirm retro-tv
+          echo "ARCH INSTALL TEST PASS"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch
+          path: build/packages/retro-tv-*.pkg.tar.zst
+          if-no-files-found: warn
+
+  package-flatpak:
+    needs: package-deb
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: deb
+          path: build/packages
+      - name: Install Flatpak tooling
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq flatpak xvfb
+      - name: Build Flatpak
+        run: bash scripts/build-flatpak.sh
+      - name: Headless Flatpak smoke test (best-effort)
+        continue-on-error: true
+        run: bash scripts/flatpak-smoke-test.sh build/packages/RetroTV-*.flatpak
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: build/packages/RetroTV-*.flatpak
+          if-no-files-found: error
+
+  # Signs everything, keeps nothing unpublished: repository generation, GPG
+  # signing, artifact verification and the full Debian install test happen
+  # here BEFORE any publication step runs.
+  sign-and-verify:
+    needs: [resolve-version, package-deb, package-rpm, package-flatpak]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: deb
+          path: build/packages
+      - uses: actions/download-artifact@v4
+        with:
+          name: rpm
+          path: build/packages
+      - uses: actions/download-artifact@v4
+        with:
+          name: flatpak
+          path: build/packages
+      - name: Install repository tooling
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq apt-utils createrepo-c dpkg-sig rpm
+      - name: Import GPG signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: bash scripts/setup-gpg.sh
+      - name: Sign .deb (dpkg-sig)
+        env:
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+        run: |
+          shopt -s nullglob
+          for f in build/packages/retro-tv_*.deb; do
+            dpkg-sig --sign builder -k "$GPG_KEY_ID" "$f"
+          done
+      - name: Sign .rpm (rpmsign)
+        env:
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          shopt -s nullglob
+          for f in build/packages/retro-tv-*.rpm; do
+            rpmsign --define "%_gpg_name $GPG_KEY_ID" --define "%_gpg_passphrase $GPG_PASSPHRASE" --addsign "$f"
+          done
+      - name: Generate SHA256SUMS
+        run: |
+          shopt -s nullglob
+          cd build/packages
+          sha256sum *.deb *.rpm *.flatpak > SHA256SUMS
+          cat SHA256SUMS
+      - name: Generate signed APT repository
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: bash scripts/generate-apt-repository.sh
+      - name: Generate signed DNF repository
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: bash scripts/generate-dnf-repository.sh
+      - name: Verify release artifacts
+        run: bash scripts/verify-release.sh
+      - name: Debian/Ubuntu end-to-end install test
+        env:
+          NV: ${{ needs.resolve-version.outputs.name }}
+          NC: ${{ needs.resolve-version.outputs.code }}
+        run: |
+          sudo bash scripts/test-apt-install.sh "$PWD/build/repository/apt" "$NV" "$NC"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: repository
+          path: build/repository
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: build/packages
+          if-no-files-found: error
+
+  # Fedora/RHEL install test in a real fedora container. Runs AFTER signing so
+  # it validates the exact signed repository that will be published.
+  test-fedora-install:
+    needs: sign-and-verify
+    runs-on: ubuntu-24.04
+    container: fedora:42
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: repository
+          path: build/repository
+      - name: Fedora end-to-end install test
+        run: bash scripts/test-dnf-install.sh "$PWD/build/repository/dnf"
+
+  publish:
+    needs: [resolve-version, sign-and-verify, test-fedora-install]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: repository
+          path: build/repository
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: build/packages
+      - name: Assemble GitHub Pages site
+        run: bash scripts/generate-ghpages.sh
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/gh-pages
+      - name: Publish Pages
+        uses: actions/deploy-pages@v4
+      - name: Create GitHub Release with assets
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Retro TV ${{ needs.resolve-version.outputs.full }}
+          body: >
+            Linux release ${{ needs.resolve-version.outputs.full }} (amd64).
+            Install instructions: https://mzainulabideendev.github.io/Retro-TV/
+          files: |
+            build/packages/*.deb
+            build/packages/*.rpm
+            build/packages/*.flatpak
+            build/packages/SHA256SUMS
+          draft: false
+          prerelease: false

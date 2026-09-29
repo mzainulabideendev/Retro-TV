@@ -1,0 +1,45 @@
+# Retro TV Snap (core22, official `plugin: flutter`).
+#
+# NOTE: this snap is best-effort and NOT verified in this environment.
+# Publishing a snap requires a Snap Store account (login via `snapcraft login`)
+# and a smoke test on a real snapd machine. It is intentionally excluded from
+# the default CI linux-release.yml pipeline; uncomment the snap job when ready.
+#
+# libmpv is staged via the Ubuntu archive (stage-packages: libmpv2) and made
+# visible to the app through `layout` symlinks so that media_kit's dlopen of
+# 'libmpv.so.2' resolves inside the strict confinement.
+name: retro-tv
+base: core22
+version: '1.2.1'
+summary: Retro-styled IPTV / YouTube streaming TV app
+description: |
+  Retro TV renders a nostalgic CRT television look and plays YouTube live
+  channels and IPTV-style streams through the native mpv/libmpv media stack.
+grade: stable
+confinement: strict
+architectures:
+  - amd64
+
+apps:
+  retro-tv:
+    command: retro_tv
+    extensions: [gnome]
+    plugs:
+      - network
+      - home
+      - pulseaudio
+      - opengl
+      - joystick
+    layout:
+      /usr/lib/x86_64-linux-gnu/libmpv.so.2:
+        symlink: $SNAP/usr/lib/x86_64-linux-gnu/libmpv.so.2
+
+parts:
+  retro-tv:
+    plugin: flutter
+    source: .
+    flutter-target: lib/main.dart
+    build-snaps:
+      - flutter/latest/stable
+    stage-packages:
+      - libmpv2

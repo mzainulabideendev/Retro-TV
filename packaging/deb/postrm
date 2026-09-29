@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+
+if [ -x "$(command -v update-desktop-database 2>/dev/null)" ]; then
+    update-desktop-database -q /usr/share/applications >/dev/null 2>&1 || true
+fi
+
+exit 0

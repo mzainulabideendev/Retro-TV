@@ -206,7 +206,18 @@ flutter build ios --release
 
 # Web
 flutter build web --release
+
+# Linux (requires libmpv.so.2 on the target machine)
+flutter build linux --release
 ```
+
+> **Desktop release channels:** Prebuilt Windows packages and an MSIX are shipped
+> via the GitHub releases; Linux is distributed as a signed `.deb` + APT repo,
+> a signed `.rpm` + DNF repo, a Flatpak bundle, and recipes for Arch/AUR and
+> Snap. **See [`LINUX_INSTALL.md`](LINUX_INSTALL.md) for install instructions
+> and [`LINUX_DOWNLOADS.md`](LINUX_DOWNLOADS.md) for download URLs.**
+> Signing / key-management policy is described in [`keys/README.md`](keys/README.md)
+> and [`SECURITY.md`](SECURITY.md).
 
 ## 🖥️ Supported Platforms
 

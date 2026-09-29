@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:retro_tv/services/tv_state.dart';
+import 'package:retro_tv/widgets/tv/native_stream_youtube_player.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 /// Wraps the official YouTube iframe player so it visually appears
@@ -45,6 +47,15 @@ import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 /// When a surface mounts with a non-zero [initialPositionMs] it seeks there
 /// before continuing — so whichever screen appears next resumes exactly
 /// where the previous one left off.
+///
+/// WINDOWS & LINUX: `youtube_player_iframe` (and therefore `webview_flutter`)
+/// has no implementation for either desktop platform, and WebView-hosted
+/// embeds on Windows were rejected by YouTube with error 153. So on these
+/// platforms this widget delegates the whole screen to
+/// [NativeStreamYoutubePlayer], which bypasses the embed and plays the real
+/// YouTube stream with libmpv instead. It reproduces the same
+/// autoplay/audio-sync/retry/position-handoff contract, so the public API and
+/// every call site stay identical across platforms.
 class YoutubeScreenPlayer extends StatefulWidget {
   final String videoId;
   final int volume; // 0-100
@@ -113,9 +124,19 @@ class _YoutubeScreenPlayerState extends State<YoutubeScreenPlayer> {
   /// state decide instead.
   DateTime _lastLoadAt = DateTime.fromMicrosecondsSinceEpoch(0);
 
+  /// True on Windows and Linux, where the youtube_player_iframe backend is
+  /// unavailable and [NativeStreamYoutubePlayer] drives playback instead.
+  /// When this is true [_controller] is never created, so every method below
+  /// that touches it is guarded (all of them are only reachable from the
+  /// non-desktop-stream code paths).
+  bool get _nativeStreamMode => isNativeStreamDesktop;
+
   @override
   void initState() {
     super.initState();
+    // On desktop-stream platforms the native player below owns all playback orchestration,
+    // so no iframe controller is created at all.
+    if (_nativeStreamMode) return;
     _createController();
   }
 
@@ -410,6 +431,8 @@ class _YoutubeScreenPlayerState extends State<YoutubeScreenPlayer> {
   @override
   void didUpdateWidget(covariant YoutubeScreenPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Windows: the child player handles video/volume/muted changes itself.
+    if (_nativeStreamMode) return;
     if (oldWidget.videoId != widget.videoId) {
       _unavailable = false;
       _unavailableReason = 'This video cannot be played in an embedded player.';
@@ -437,6 +460,11 @@ class _YoutubeScreenPlayerState extends State<YoutubeScreenPlayer> {
     _disposed = true;
     _playbackWatchdog?.cancel();
     _positionReporter?.cancel();
+    if (_nativeStreamMode) {
+      // The native player reports its own position to the next surface.
+      super.dispose();
+      return;
+    }
     // Hand the current position to whatever surface mounts next (small
     // screen <-> fullscreen) so playback resumes at the same time instead
     // of restarting at 0:00.
@@ -451,6 +479,25 @@ class _YoutubeScreenPlayerState extends State<YoutubeScreenPlayer> {
 
   @override
   Widget build(BuildContext context) {
+    // Windows/Linux: youtube_player_iframe/webview_flutter have no desktop
+    // implementation, so render the native direct-stream player instead. It
+    // implements the identical contract (autoplay, audio sync, retries,
+    // watchdog, position handoff, unavailable handoff), so callers and
+    // TvState need no platform branches.
+    if (_nativeStreamMode) {
+      return NativeStreamYoutubePlayer(
+        key: const ValueKey('native-stream-youtube-player'),
+        videoId: widget.videoId,
+        volume: widget.volume,
+        muted: widget.muted,
+        initialPositionMs: widget.initialPositionMs,
+        onPositionChanged: widget.onPositionChanged,
+        onEnded: widget.onEnded,
+        onUnavailable: widget.onUnavailable,
+        crtOverlay: widget.crtOverlay,
+      );
+    }
+
     if (_unavailable) {
       return Container(
         color: Colors.black,

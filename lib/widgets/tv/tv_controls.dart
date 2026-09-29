@@ -91,6 +91,10 @@ class TvControls extends StatelessWidget {
               ),
             ],
           ),
+          if (isWindowsDesktop) ...[
+            const SizedBox(height: 12),
+            _zoomRow(),
+          ],
           const SizedBox(height: 12),
           _numberPad(),
           const SizedBox(height: 12),
@@ -152,6 +156,57 @@ class TvControls extends StatelessWidget {
               _iconBtn(Icons.remove, onDown),
               _iconBtn(Icons.add, onUp),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Windows-only window zoom, like Ctrl +/- in a browser: the whole app is
+  /// scaled, so the TV picture and this remote panel grow and shrink together.
+  Widget _zoomRow() {
+    final percent = (tv.zoom * 100).round();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black26,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Text(
+            'ZOOM',
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+              letterSpacing: 1,
+            ),
+          ),
+          const Spacer(),
+          _iconBtn(Icons.zoom_out, tv.canZoomOut ? tv.zoomOut : null),
+          SizedBox(
+            width: 52,
+            child: Center(
+              child: Text(
+                '$percent%',
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          _iconBtn(Icons.zoom_in, tv.canZoomIn ? tv.zoomIn : null),
+          const SizedBox(width: 4),
+          TextButton(
+            onPressed: tv.zoom == 1.0 ? null : tv.resetZoom,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('RESET', style: TextStyle(fontSize: 10)),
           ),
         ],
       ),

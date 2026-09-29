@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'services/supabase_service.dart';
 import 'services/auth_service.dart';
 import 'services/tv_state.dart';
+import 'widgets/window_zoom.dart';
 import 'screens/public/home_screen.dart';
 import 'screens/public/onboarding_screen.dart';
 
@@ -52,15 +53,13 @@ class RetroTvApp extends StatelessWidget {
         ),
         // Cap system font scaling so every screen stays responsive and
         // never overflows when the device font size is set very large.
-        builder: (context, child) {
-          final mediaQuery = MediaQuery.of(context);
-          return MediaQuery(
-            data: mediaQuery.copyWith(
-              textScaler: mediaQuery.textScaler.clamp(maxScaleFactor: 1.3),
-            ),
-            child: child!,
-          );
-        },
+        // On Windows the zoom acts like a browser zoom (Ctrl + / -): the app
+        // lays out in a proportionally smaller logical viewport and is then
+        // scaled back up, so the TV picture AND the remote panel grow and
+        // shrink together instead of the picture being cropped on its own.
+        builder: (context, child) => WindowZoom(
+          child: child!,
+        ),
         home: showOnboarding ? const OnboardingScreen() : const HomeScreen(),
       ),
     );

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.retrotv.retro_tv</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Retro TV</name>
+  <summary>Retro-styled IPTV / YouTube streaming TV app</summary>
+  <description>
+    <p>Retro TV is a Flutter desktop application that renders a nostalgic CRT television look while playing YouTube live channels and IPTV-style streams. It plays video directly through the native media stack (mpv/libmpv) without relying on a web widget.</p>
+  </description>
+  <launchable type="desktop-id">com.retrotv.retro_tv.desktop</launchable>
+  <provides>
+    <binary>retro_tv</binary>
+  </provides>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Player</category>
+  </categories>
+</component>

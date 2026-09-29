@@ -197,6 +197,24 @@ class _FullscreenTvViewState extends State<FullscreenTvView> {
             '${tv.effectiveVolume}',
             style: const TextStyle(color: Colors.white70, fontSize: 12),
           ),
+          // Windows-only window zoom (like a browser's Ctrl +/-).
+          if (isWindowsDesktop) ...[
+            const SizedBox(width: 12),
+            IconButton(
+              icon: const Icon(Icons.zoom_out, color: Colors.white),
+              tooltip: 'Zoom out',
+              onPressed: tv.canZoomOut ? tv.zoomOut : null,
+            ),
+            Text(
+              '${(tv.zoom * 100).round()}%',
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            IconButton(
+              icon: const Icon(Icons.zoom_in, color: Colors.white),
+              tooltip: 'Zoom in',
+              onPressed: tv.canZoomIn ? tv.zoomIn : null,
+            ),
+          ],
         ],
       ),
     );

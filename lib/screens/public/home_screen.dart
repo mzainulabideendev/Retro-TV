@@ -135,6 +135,15 @@ class _HomeScreenState extends State<HomeScreen> {
       case LogicalKeyboardKey.keyG:
         setState(() => _showGuide = !_showGuide);
         break;
+      case LogicalKeyboardKey.equal:
+      case LogicalKeyboardKey.add:
+      case LogicalKeyboardKey.numpadAdd:
+        if (isWindowsDesktop) tv.zoomIn();
+        break;
+      case LogicalKeyboardKey.minus:
+      case LogicalKeyboardKey.numpadSubtract:
+        if (isWindowsDesktop) tv.zoomOut();
+        break;
       case LogicalKeyboardKey.enter:
         tv.confirmDigits();
         break;
