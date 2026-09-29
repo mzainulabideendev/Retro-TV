@@ -232,13 +232,29 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends apt-utils createrepo-c rpm gnupg
           
-          echo "[build] Installing dpkg-sig from Ubuntu 22.04 package..."
+          echo "[build] Installing dpkg-sig from Ubuntu 22.04 package with fallback mirrors..."
           # dpkg-sig is not in Ubuntu 24.04 repos; install from Ubuntu 22.04 (jammy) package
           # The package is architecture-independent (all) so it works on Ubuntu 24.04
-          wget -q "https://archive.ubuntu.com/ubuntu/pool/universe/d/dpkg-sig/dpkg-sig_0.13.1+git20210118-1_all.deb" -O /tmp/dpkg-sig.deb || {
-            echo "ERROR: Failed to download dpkg-sig" >&2
+          DPKG_SIG_URLS=(
+            "https://archive.ubuntu.com/ubuntu/pool/universe/d/dpkg-sig/dpkg-sig_0.13.1+git20210118-1_all.deb"
+            "http://archive.ubuntu.com/ubuntu/pool/universe/d/dpkg-sig/dpkg-sig_0.13.1+git20210118-1_all.deb"
+            "http://security.ubuntu.com/ubuntu/pool/universe/d/dpkg-sig/dpkg-sig_0.13.1+git20210118-1_all.deb"
+          )
+          DOWNLOADED=false
+          for url in "${DPKG_SIG_URLS[@]}"; do
+            echo "[build] Trying to download dpkg-sig from: $url"
+            if wget -q --timeout=30 --tries=3 "$url" -O /tmp/dpkg-sig.deb; then
+              echo "[build] Download successful from: $url"
+              DOWNLOADED=true
+              break
+            else
+              echo "[build] Failed to download from: $url"
+            fi
+          done
+          if [ "$DOWNLOADED" = false ]; then
+            echo "ERROR: Failed to download dpkg-sig from all mirrors" >&2
             exit 1
-          }
+          fi
           sudo dpkg -i /tmp/dpkg-sig.deb
           sudo apt-get install -f -y
           
