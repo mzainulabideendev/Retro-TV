@@ -35,28 +35,49 @@ detect_kde_branch() {
     local out kde_branch="" line exit_code
     log "build-flatpak: querying flathub for org.kde.Platform branches"
     set +e
+    # First, let's see what remotes we have
+    log "build-flatpak: checking configured remotes:"
+    flatpak remotes --user
+    log "build-flatpak: running remote-ls for flathub..."
     out="$(flatpak remote-ls --user flathub --arch=x86_64 2>&1)"
     exit_code=$?
     set -e
     log "build-flatpak: remote-ls exit code: $exit_code"
-    log "build-flatpak: remote-ls output (first 30 lines):"
-    i=0
-    while IFS= read -r line && [ $i -lt 30 ]; do
-        printf '%s\n' "$line"
-        i=$((i+1))
-    done <<< "$out"
+    log "build-flatpak: remote-ls FULL output:"
+    printf '%s\n' "$out"
     if [ $exit_code -ne 0 ]; then
         log "build-flatpak: WARNING: remote-ls returned non-zero exit code $exit_code, but continuing to parse output"
     fi
     # Extract KDE branch without head to avoid SIGPIPE
+    # Try multiple patterns that might appear in remote-ls output
     while IFS= read -r line; do
-        if [[ "$line" =~ ^org\.kde\.Platform ]]; then
-            kde_branch="${line##*/}"
+        # Pattern 1: org.kde.Platform/x86_64/6.10
+        if [[ "$line" =~ ^org\.kde\.Platform[[:space:]] ]]; then
+            kde_branch="${line%%[[:space:]]*}"
+            kde_branch="${kde_branch##*/}"
+            log "build-flatpak: found KDE Platform (pattern 1): $kde_branch"
             break
+        fi
+        # Pattern 2: org.kde.Platform/x86_64/6.10 at start of line
+        if [[ "$line" =~ ^org\.kde\.Platform/ ]]; then
+            kde_branch="${line##*/}"
+            log "build-flatpak: found KDE Platform (pattern 2): $kde_branch"
+            break
+        fi
+        # Pattern 3: any line containing org.kde.Platform
+        if [[ "$line" =~ org\.kde\.Platform ]]; then
+            # Extract version from something like org.kde.Platform/x86_64/6.10
+            if [[ "$line" =~ org\.kde\.Platform/([^/]+)/([0-9.]+) ]]; then
+                kde_branch="${BASH_REMATCH[2]}"
+                log "build-flatpak: found KDE Platform (pattern 3): $kde_branch"
+                break
+            fi
         fi
     done <<< "$out"
     if [ -z "$kde_branch" ]; then
         log "build-flatpak: ERROR: could not find org.kde.Platform branch in remote-ls output"
+        log "build-flatpak: Available refs containing 'kde' (case-insensitive):"
+        printf '%s\n' "$out" | grep -i kde || log "  (none found)"
         return 1
     fi
     printf '%s\n' "$kde_branch"
