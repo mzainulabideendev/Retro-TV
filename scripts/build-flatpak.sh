@@ -22,8 +22,8 @@ MANIFEST="$ROOT_DIR/flatpak/com.retrotv.retro_tv.yml"
 # manifest (e.g. 6.10) can disappear. Resolve the newest available
 # org.kde.Platform branch and pin the manifest to that.
 detect_kde_branch() {
-    flatpak remote-ls --user flathub --arch=x86_64 --columns=ref 2>/dev/null \
-        | sed -n 's#^app/org\.kde\.Platform/x86_64/\([0-9][0-9.]*\)$#\1#p' \
+    flatpak remote-ls --user flathub --arch=x86_64 2>/dev/null \
+        | awk '/^org\.kde\.Platform\/x86_64\/[0-9]/ { sub(/.*\//, "", $1); print $1 }' \
         | sort -V | tail -n1
 }
 
