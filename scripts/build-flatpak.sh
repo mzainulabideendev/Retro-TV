@@ -13,6 +13,10 @@ FBOUT="$BUILD_DIR/flatpak-build"
 
 log "build-flatpak: checking flatpak CLI"
 command -v flatpak >/dev/null 2>&1 || die "flatpak CLI not found"
+flatpak --version
+log "build-flatpak: checking flatpak-builder"
+command -v flatpak-builder >/dev/null 2>&1 || die "flatpak-builder not found"
+flatpak-builder --version
 log "build-flatpak: checking deb artifact at $FBSRC"
 [ -f "$FBSRC" ] || die "missing $FBSRC (run scripts/build-deb.sh first)"
 log "build-flatpak: deb artifact found"
@@ -20,6 +24,7 @@ log "build-flatpak: deb artifact found"
 log "build-flatpak: adding flathub remote"
 flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 log "build-flatpak: flathub remote added"
+flatpak remotes
 
 MANIFEST="$ROOT_DIR/flatpak/com.retrotv.retro_tv.yml"
 
@@ -67,21 +72,23 @@ log "using org.kde.Platform//$KDE_BRANCH"
 
 # Install the modern builder + the exact runtimes the manifest needs.
 log "build-flatpak: installing org.flatpak.Builder"
-flatpak install --user -y --noninteractive flathub org.flatpak.Builder
+flatpak install --user -y --noninteractive flathub org.flatpak.Builder || die "flatpak install Builder failed"
+log "build-flatpak: Builder installed"
+
 log "build-flatpak: installing org.kde.Platform and org.kde.Sdk"
-flatpak install --user -y --noninteractive flathub org.kde.Platform//"$KDE_BRANCH" org.kde.Sdk//"$KDE_BRANCH"
+flatpak install --user -y --noninteractive flathub org.kde.Platform//"$KDE_BRANCH" org.kde.Sdk//"$KDE_BRANCH" || die "flatpak install runtime/SDK failed"
 log "build-flatpak: runtimes installed"
 
 # org.flatpak.Builder is run from the repo root so it can read flatpak/.
 log "build-flatpak: running flatpak-builder"
 flatpak run --user org.flatpak.Builder \
     --user --install-deps-from=flathub --ccache --force-clean \
-    build/flatpak-build flatpak/com.retrotv.retro_tv.yml
+    build/flatpak-build flatpak/com.retrotv.retro_tv.yml || die "flatpak-builder failed"
 log "build-flatpak: flatpak-builder completed"
 
 mkdir -p "$PACKAGES_DIR"
 log "build-flatpak: creating flatpak bundle"
 flatpak build-bundle "$HOME/.local/share/flatpak/repo" \
     "$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak" \
-    com.retrotv.retro_tv master
+    com.retrotv.retro_tv master || die "flatpak build-bundle failed"
 log "built $PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"
