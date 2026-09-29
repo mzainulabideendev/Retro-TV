@@ -197,20 +197,23 @@ ostree refs --repo="$HOME/.local/share/flatpak/repo" >&2 || echo "[build] ostree
 echo "[build] ======== END DEBUG ==========" >&2
 
 # Find the actual application ref from the OSTree repository (authoritative source)
-APP_REF=$(ostree refs --repo="$HOME/.local/share/flatpak/repo" | grep "^app/com.retrotv.retro_tv/" | head -1)
-if [ -z "$APP_REF" ]; then
-    echo "[build] ERROR: No application ref found for com.retrotv.retro_tv in OSTree repository" >&2
-    exit 1
-fi
-echo "[build] Found application ref: $APP_REF" >&2
-
-# Extract branch from the ref (format: app/com.retrotv.retro_tv/x86_64/<branch>)
-BRANCH="${APP_REF##*/}"
-if [ -z "$BRANCH" ]; then
-    echo "[build] ERROR: Could not extract branch from ref: $APP_REF" >&2
-    exit 1
-fi
-echo "[build] Using branch: $BRANCH" >&2
+        # The refs have a 'retro_tv-origin:' prefix (e.g., retro_tv-origin:app/com.retrotv.retro_tv/x86_64/master)
+        APP_REF=$(ostree refs --repo="$HOME/.local/share/flatpak/repo" | grep "app/com.retrotv.retro_tv/" | head -1)
+        if [ -z "$APP_REF" ]; then
+            echo "[build] ERROR: No application ref found for com.retrotv.retro_tv in OSTree repository" >&2
+            exit 1
+        fi
+        echo "[build] Found application ref: $APP_REF" >&2
+        
+        # Extract branch from the ref (format: retro_tv-origin:app/com.retrotv.retro_tv/x86_64/<branch>)
+        # Remove the remote prefix if present, then extract the last component
+        REF_WITHOUT_REMOTE="${APP_REF#*:}"
+        BRANCH="${REF_WITHOUT_REMOTE##*/}"
+        if [ -z "$BRANCH" ]; then
+            echo "[build] ERROR: Could not extract branch from ref: $APP_REF" >&2
+            exit 1
+        fi
+        echo "[build] Using branch: $BRANCH" >&2
 
 flatpak build-bundle "$HOME/.local/share/flatpak/repo" \
     "$BUILD_PACKAGES_DIR/RetroTV-${BUILD_VERSION_NAME}.${BUILD_VERSION_CODE}.flatpak" \
@@ -250,15 +253,17 @@ else
     mkdir -p "$PACKAGES_DIR"
     log "build-flatpak: creating flatpak bundle" >&2
     # Find the actual application ref from the OSTree repository (authoritative source)
-    APP_REF=$(ostree refs --repo="$HOME/.local/share/flatpak/repo" | grep "^app/com.retrotv.retro_tv/" | head -1)
+    # The refs have a 'retro_tv-origin:' prefix (e.g., retro_tv-origin:app/com.retrotv.retro_tv/x86_64/master)
+    APP_REF=$(ostree refs --repo="$HOME/.local/share/flatpak/repo" | grep "app/com.retrotv.retro_tv/" | head -1)
     if [ -z "$APP_REF" ]; then
         log "build-flatpak: ERROR: No application ref found for com.retrotv.retro_tv in OSTree repository" >&2
         exit 1
     fi
     log "build-flatpak: Found application ref: $APP_REF" >&2
     
-    # Extract branch from the ref (format: app/com.retrotv.retro_tv/x86_64/<branch>)
-    BRANCH="${APP_REF##*/}"
+    # Extract branch from the ref (format: retro_tv-origin:app/com.retrotv.retro_tv/x86_64/<branch>)
+    REF_WITHOUT_REMOTE="${APP_REF#*:}"
+    BRANCH="${REF_WITHOUT_REMOTE##*/}"
     if [ -z "$BRANCH" ]; then
         log "build-flatpak: ERROR: Could not extract branch from ref: $APP_REF" >&2
         exit 1
