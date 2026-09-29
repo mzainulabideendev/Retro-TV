@@ -34,8 +34,8 @@ detect_kde_branch() {
         return 1
     }
     log "build-flatpak: remote-ls output (first 20 lines):"
-    echo "$out" | head -20
-    echo "$out" \
+    printf '%s\n' "$out" | head -20
+    printf '%s\n' "$out" \
         | grep '^org\.kde\.Platform' \
         | head -n1 \
         | sed -E 's#.*/([0-9][0-9.]*)$#\1#'

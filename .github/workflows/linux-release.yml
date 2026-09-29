@@ -130,7 +130,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install toolchain
         run: |
-          pacman -Sy --noconfirm --needed base-devel fakeroot clang cmake ninja git patchelf
+          pacman -Sy --noconfirm --needed base-devel fakeroot clang cmake ninja git patchelf sudo
           # runtime deps so makepkg's dependency check can resolve them
           # (Arch's 'mpv' package provides libmpv.so=2-64)
           pacman -S --noconfirm --needed gtk3 mpv
@@ -146,10 +146,17 @@ jobs:
         run: |
           useradd -m build
           chown -R build:build "$GITHUB_WORKSPACE"
+          # Ensure the build user can read the Flutter SDK
+          chmod -R a+rX /opt/flutter-sdk
           # Configure git safe.directory for the build user (Flutter internally uses git)
-          su - build -c "git config --global --add safe.directory /opt/flutter-sdk"
-          su - build -c "git config --global --add safe.directory '*'"
-          su - build -c "export PATH=/opt/flutter-sdk/bin:\$PATH; export PUB_CACHE='$GITHUB_WORKSPACE/.pub-cache'; cd '$GITHUB_WORKSPACE' && bash scripts/build-arch.sh"
+          sudo -u build -H git config --global --add safe.directory /opt/flutter-sdk
+          sudo -u build -H git config --global --add safe.directory '*'
+          # Verify git can access the Flutter SDK as the build user
+          sudo -u build -H git -C /opt/flutter-sdk rev-parse --is-inside-work-tree
+          # Verify Flutter runs as the build user
+          sudo -u build -H /opt/flutter-sdk/bin/flutter --version
+          # Run the actual build
+          sudo -u build -H bash -c "export PATH=/opt/flutter-sdk/bin:\$PATH; export PUB_CACHE='$GITHUB_WORKSPACE/.pub-cache'; cd '$GITHUB_WORKSPACE' && bash scripts/build-arch.sh"
       - name: Install and verify executable (pacman)
         run: |
           pacman -U --noconfirm build/packages/retro-tv-*.pkg.tar.zst
