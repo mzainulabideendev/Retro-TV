@@ -32,55 +32,64 @@ MANIFEST="$ROOT_DIR/flatpak/com.retrotv.retro_tv.yml"
 # manifest (e.g. 6.10) can disappear. Resolve the newest available
 # org.kde.Platform branch and pin the manifest to that.
 detect_kde_branch() {
-    local out kde_branch="" line exit_code
-    log "build-flatpak: querying flathub for org.kde.Platform branches" >&2
-    set +e
-    # First, let's see what remotes we have
-    log "build-flatpak: checking configured remotes:" >&2
-    flatpak remotes --user
-    log "build-flatpak: running remote-ls for flathub..." >&2
-    out="$(flatpak remote-ls --user flathub --arch=x86_64 2>&1)"
-    exit_code=$?
-    set -e
-    log "build-flatpak: remote-ls exit code: $exit_code" >&2
-    log "build-flatpak: remote-ls FULL output:" >&2
-    printf '%s\n' "$out" >&2
-    if [ $exit_code -ne 0 ]; then
-        log "build-flatpak: WARNING: remote-ls returned non-zero exit code $exit_code, but continuing to parse output" >&2
+    local kde_branch=""
+    local manifest_branch=""
+    local candidate_branches=()
+    
+    # Read the pinned version from manifest first
+    manifest_branch="$(sed -n "s/^runtime-version: *'\?\([^']*\)'\?$/\1/p" "$MANIFEST")"
+    log "build-flatpak: manifest pins org.kde.Platform version: '${manifest_branch}'" >&2
+    
+    # Strategy: Try the manifest's pinned version first, then fallback to known supported branches
+    # Known KDE Platform branches (newest first) that are commonly available on Flathub
+    local known_branches=("6.10" "6.9" "6.8" "6.7" "6.6" "6.5" "6.4" "6.3" "6.2" "6.1" "6.0" "5.15" "5.14" "5.13")
+    
+    # If manifest has a version, prioritize it
+    if [ -n "$manifest_branch" ]; then
+        candidate_branches+=("$manifest_branch")
     fi
-    # Extract KDE branch without head to avoid SIGPIPE
-    # Try multiple patterns that might appear in remote-ls output
-    while IFS= read -r line; do
-        # Pattern 1: org.kde.Platform/x86_64/6.10
-        if [[ "$line" =~ ^org\.kde\.Platform[[:space:]] ]]; then
-            kde_branch="${line%%[[:space:]]*}"
-            kde_branch="${kde_branch##*/}"
-            log "build-flatpak: found KDE Platform (pattern 1): $kde_branch" >&2
-            break
-        fi
-        # Pattern 2: org.kde.Platform/x86_64/6.10 at start of line
-        if [[ "$line" =~ ^org\.kde\.Platform/ ]]; then
-            kde_branch="${line##*/}"
-            log "build-flatpak: found KDE Platform (pattern 2): $kde_branch" >&2
-            break
-        fi
-        # Pattern 3: any line containing org.kde.Platform
-        if [[ "$line" =~ org\.kde\.Platform ]]; then
-            # Extract version from something like org.kde.Platform/x86_64/6.10
-            if [[ "$line" =~ org\.kde\.Platform/([^/]+)/([0-9.]+) ]]; then
-                kde_branch="${BASH_REMATCH[2]}"
-                log "build-flatpak: found KDE Platform (pattern 3): $kde_branch" >&2
+    
+    # Add known branches (avoid duplicates)
+    for branch in "${known_branches[@]}"; do
+        local found=0
+        for existing in "${candidate_branches[@]}"; do
+            if [ "$existing" = "$branch" ]; then
+                found=1
                 break
             fi
+        done
+        if [ $found -eq 0 ]; then
+            candidate_branches+=("$branch")
         fi
-    done <<< "$out"
-    if [ -z "$kde_branch" ]; then
-        log "build-flatpak: ERROR: could not find org.kde.Platform branch in remote-ls output" >&2
-        log "build-flatpak: Available refs containing 'kde' (case-insensitive):" >&2
-        printf '%s\n' "$out" | grep -i kde || log "  (none found)" >&2
-        return 1
-    fi
-    printf '%s\n' "$kde_branch"
+    done
+    
+    log "build-flatpak: will try KDE Platform branches in order: ${candidate_branches[*]}" >&2
+    
+    # Verify each candidate branch exists on Flathub by checking both Platform and SDK
+    for branch in "${candidate_branches[@]}"; do
+        log "build-flatpak: checking if KDE Platform $branch exists on Flathub..." >&2
+        
+        # Check if Platform runtime exists
+        set +e
+        flatpak remote-info --user flathub "org.kde.Platform/x86_64/${branch}" >/dev/null 2>&1
+        local platform_result=$?
+        flatpak remote-info --user flathub "org.kde.Sdk/x86_64/${branch}" >/dev/null 2>&1
+        local sdk_result=$?
+        set -e
+        
+        if [ $platform_result -eq 0 ] && [ $sdk_result -eq 0 ]; then
+            log "build-flatpak: VERIFIED: KDE Platform $branch and SDK $branch both exist on Flathub" >&2
+            printf '%s\n' "$branch"
+            return 0
+        elif [ $platform_result -eq 0 ]; then
+            log "build-flatpak: WARNING: Platform $branch exists but SDK $branch missing, trying next..." >&2
+        else
+            log "build-flatpak: KDE Platform $branch not found on Flathub, trying next..." >&2
+        fi
+    done
+    
+    log "build-flatpak: ERROR: no verified KDE Platform/SDK branch found on Flathub" >&2
+    return 1
 }
 
 log "build-flatpak: calling detect_kde_branch..." >&2
