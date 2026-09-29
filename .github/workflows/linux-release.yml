@@ -183,7 +183,7 @@ jobs:
       - name: Install Flatpak tooling
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq flatpak flatpak-builder xvfb
+          sudo apt-get install -y -qq flatpak flatpak-builder xvfb dbus
       - name: Build Flatpak
         run: bash scripts/build-flatpak.sh
       - name: Headless Flatpak smoke test (best-effort)

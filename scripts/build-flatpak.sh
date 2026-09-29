@@ -135,9 +135,37 @@ log "build-flatpak: runtimes installed"
 
 # org.flatpak.Builder is run from the repo root so it can read flatpak/.
 log "build-flatpak: running flatpak-builder"
-flatpak run --user org.flatpak.Builder \
-    --user --install-deps-from=flathub --ccache --force-clean \
-    build/flatpak-build flatpak/com.retrotv.retro_tv.yml || die "flatpak-builder failed"
+
+# Diagnostic output for debugging
+log "build-flatpak: Flatpak diagnostics:"
+log "  Flatpak: $(flatpak --version 2>/dev/null || echo 'not found')"
+log "  flatpak-builder: $(flatpak-builder --version 2>/dev/null || echo 'not found')"
+log "  dbus-run-session: $(command -v dbus-run-session || echo 'not found')"
+log "  DISPLAY: ${DISPLAY:-<unset>}"
+log "  DBUS_SESSION_BUS_ADDRESS: ${DBUS_SESSION_BUS_ADDRESS:-<unset>}"
+log "  XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR:-<unset>}"
+log "  HOME: $HOME"
+flatpak --user list --runtime 2>/dev/null | head -20 || log "  (no user runtimes)"
+flatpak --user list --app 2>/dev/null | head -10 || log "  (no user apps)"
+
+# Ensure we have a D-Bus session for headless Flatpak operations
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-$UID}"
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+
+# Start a D-Bus session for headless flatpak-builder
+if command -v dbus-run-session >/dev/null 2>&1; then
+    log "build-flatpak: starting dbus-run-session for flatpak-builder"
+    DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus" \
+    dbus-run-session -- flatpak run --user org.flatpak.Builder \
+        --user --install-deps-from=flathub --ccache --force-clean \
+        build/flatpak-build flatpak/com.retrotv.retro_tv.yml || die "flatpak-builder failed"
+else
+    log "build-flatpak: WARNING: dbus-run-session not found, attempting without"
+    flatpak run --user org.flatpak.Builder \
+        --user --install-deps-from=flathub --ccache --force-clean \
+        build/flatpak-build flatpak/com.retrotv.retro_tv.yml || die "flatpak-builder failed"
+fi
 log "build-flatpak: flatpak-builder completed"
 
 mkdir -p "$PACKAGES_DIR"
