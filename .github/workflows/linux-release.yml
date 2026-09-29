@@ -228,37 +228,41 @@ jobs:
           echo "[build] Updating apt metadata..."
           sudo apt-get update
           
-          echo "[build] Checking dpkg-sig availability..."
-          apt-cache policy dpkg-sig || true
-          apt-cache search '^dpkg-sig$' || true
-          
           echo "[build] Installing repository tooling..."
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends apt-utils createrepo-c rpm
+          sudo apt-get install -y --no-install-recommends apt-utils createrepo-c rpm gnupg
           
-          echo "[build] Checking dpkg-sig availability..."
-          if ! apt-cache policy dpkg-sig 2>/dev/null | grep -q "Candidate: .*[^ (]"; then
-            echo "[build] dpkg-sig not available in default Ubuntu 24.04 repos, installing from source..."
-            # Install build dependencies
-            sudo apt-get install -y --no-install-recommends build-essential debhelper devscripts git
-            # Build dpkg-sig from source
-            cd /tmp
-            git clone --depth 1 https://salsa.debian.org/debian/dpkg-sig.git
-            cd dpkg-sig
-            dpkg-buildpackage -us -uc -b
-            sudo dpkg -i ../dpkg-sig_*.deb
-          else
-            sudo apt-get install -y --no-install-recommends dpkg-sig
-          fi
+          echo "[build] Installing dpkg-sig from source..."
+          # dpkg-sig is not in Ubuntu 24.04 repos; build from source
+          sudo apt-get install -y --no-install-recommends build-essential debhelper devscripts git
+          cd /tmp
+          git clone --depth 1 https://salsa.debian.org/debian/dpkg-sig.git
+          cd dpkg-sig
+          dpkg-buildpackage -us -uc -b
+          sudo dpkg -i ../dpkg-sig_*.deb
           
-          # Verify dpkg-sig is available
-          command -v dpkg-sig >/dev/null 2>&1 || {
-            echo "::error::Required dependency dpkg-sig is unavailable"
+          echo "[build] Verifying repository tooling..."
+          command -v gpg >/dev/null 2>&1 || {
+            echo "::error::gpg is missing"
             exit 1
           }
-          
-          echo "[build] dpkg-sig installed successfully"
-          dpkg-sig --version || dpkg-sig --help
+          command -v rpm >/dev/null 2>&1 || {
+            echo "::error::rpm is missing"
+            exit 1
+          }
+          command -v createrepo_c >/dev/null 2>&1 || {
+            echo "::error::createrepo_c is missing"
+            exit 1
+          }
+          command -v apt-ftparchive >/dev/null 2>&1 || {
+            echo "::error::apt-ftparchive is missing"
+            exit 1
+          }
+          command -v dpkg-sig >/dev/null 2>&1 || {
+            echo "::error::dpkg-sig is missing"
+            exit 1
+          }
+          echo "[build] Repository tooling verified"
       - name: Import GPG signing key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
