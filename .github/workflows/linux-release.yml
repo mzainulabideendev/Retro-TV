@@ -217,23 +217,42 @@ jobs:
           path: build/packages
       - name: Install repository tooling
         run: |
-          set -x
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq apt-utils createrepo-c rpm
-          echo "[build] Installing dpkg-sig from Ubuntu 22.04 package..."
-          # dpkg-sig is not in Ubuntu 24.04 repos; install from Ubuntu 22.04 (jammy) package
-          echo "[build] Downloading dpkg-sig..."
-          wget -q "http://archive.ubuntu.com/ubuntu/pool/universe/d/dpkg-sig/dpkg-sig_0.13.1+git20210118-1_all.deb" -O /tmp/dpkg-sig.deb || {
-            echo "ERROR: Failed to download dpkg-sig" >&2
+          set -euo pipefail
+          echo "[build] Ubuntu release:"
+          cat /etc/os-release
+          echo "[build] Architecture:"
+          dpkg --print-architecture
+          echo "[build] Checking apt sources..."
+          grep -Rhv '^[[:space:]]*#' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true
+          
+          echo "[build] Updating apt metadata..."
+          sudo apt-get update
+          
+          echo "[build] Checking dpkg-sig availability..."
+          apt-cache policy dpkg-sig || true
+          apt-cache search '^dpkg-sig$' || true
+          
+          echo "[build] Installing repository tooling..."
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends apt-utils createrepo-c rpm
+          
+          echo "[build] Installing dpkg-sig..."
+          sudo apt-get install -y --no-install-recommends dpkg-sig || {
+            echo "[build] dpkg-sig not available in default repos, checking alternatives..."
+            apt-cache policy dpkg-sig || true
+            apt-cache search '^dpkg-sig$' || true
+            echo "[build] dpkg-sig not available in default repos"
             exit 1
           }
-          echo "[build] Installing dpkg-sig..."
-          sudo dpkg -i /tmp/dpkg-sig.deb
-          sudo apt-get install -f -y
+          
           # Verify dpkg-sig is available
-          command -v dpkg-sig >/dev/null || { echo "ERROR: dpkg-sig installation failed"; exit 1; }
+          command -v dpkg-sig >/dev/null 2>&1 || {
+            echo "::error::Required dependency dpkg-sig is unavailable"
+            exit 1
+          }
+          
           echo "[build] dpkg-sig installed successfully"
-          set +x
+          dpkg-sig --version || dpkg-sig --help
       - name: Import GPG signing key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
