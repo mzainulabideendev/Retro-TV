@@ -59,7 +59,15 @@ detect_kde_branch() {
     printf '%s\n' "$kde_branch"
 }
 
+log "build-flatpak: calling detect_kde_branch..."
+set +e
 KDE_BRANCH="$(detect_kde_branch)"
+DETECT_RESULT=$?
+set -e
+if [ $DETECT_RESULT -ne 0 ]; then
+    log "build-flatpak: ERROR: detect_kde_branch failed with exit code $DETECT_RESULT"
+    exit $DETECT_RESULT
+fi
 log "build-flatpak: detected KDE branch: '$KDE_BRANCH'"
 [ -n "$KDE_BRANCH" ] || die "could not determine an org.kde.Platform branch from flathub"
 PINNED="$(sed -n "s/^runtime-version: *'\?\([^']*\)'\?$/\1/p" "$MANIFEST")"
@@ -72,11 +80,25 @@ log "using org.kde.Platform//$KDE_BRANCH"
 
 # Install the modern builder + the exact runtimes the manifest needs.
 log "build-flatpak: installing org.flatpak.Builder"
-flatpak install --user -y --noninteractive flathub org.flatpak.Builder || die "flatpak install Builder failed"
+set +e
+flatpak install --user -y --noninteractive flathub org.flatpak.Builder
+BUILDER_RESULT=$?
+set -e
+if [ $BUILDER_RESULT -ne 0 ]; then
+    log "build-flatpak: ERROR: flatpak install Builder failed with exit code $BUILDER_RESULT"
+    exit $BUILDER_RESULT
+fi
 log "build-flatpak: Builder installed"
 
 log "build-flatpak: installing org.kde.Platform and org.kde.Sdk"
-flatpak install --user -y --noninteractive flathub org.kde.Platform//"$KDE_BRANCH" org.kde.Sdk//"$KDE_BRANCH" || die "flatpak install runtime/SDK failed"
+set +e
+flatpak install --user -y --noninteractive flathub org.kde.Platform//"$KDE_BRANCH" org.kde.Sdk//"$KDE_BRANCH"
+RUNTIME_RESULT=$?
+set -e
+if [ $RUNTIME_RESULT -ne 0 ]; then
+    log "build-flatpak: ERROR: flatpak install runtime/SDK failed with exit code $RUNTIME_RESULT"
+    exit $RUNTIME_RESULT
+fi
 log "build-flatpak: runtimes installed"
 
 # org.flatpak.Builder is run from the repo root so it can read flatpak/.
