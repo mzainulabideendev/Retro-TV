@@ -159,6 +159,11 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-$UID}"
 mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 
+# Export variables needed by the temp script
+export BUILD_PACKAGES_DIR="$PACKAGES_DIR"
+export BUILD_VERSION_NAME="$VERSION_NAME"
+export BUILD_VERSION_CODE="$VERSION_CODE"
+
 # Start a D-Bus session for headless flatpak-builder AND bundle creation
 if command -v dbus-run-session >/dev/null 2>&1; then
     log "build-flatpak: starting dbus-run-session for flatpak-builder and bundle" >&2
@@ -182,45 +187,47 @@ fi
 echo "[build] build-flatpak: flatpak-builder completed" >&2
 
 echo "[build] ======== FINAL FLATPAK BUNDLE DEBUG ==========" >&2
-        echo "[build] PACKAGES_DIR='$PACKAGES_DIR'" >&2
-        echo "[build] HOME='$HOME'" >&2
-        echo "[build] VERSION_NAME='$VERSION_NAME'" >&2
-        echo "[build] VERSION_CODE='$VERSION_CODE'" >&2
-        echo "[build] PACKAGES_DIR='$PACKAGES_DIR'" >&2
-        echo "[build] flatpak repo path: $HOME/.local/share/flatpak/repo" >&2
-        ls -la "$HOME/.local/share/flatpak/repo" >&2 || echo "[build] repo dir listing failed" >&2
-        ostree refs --repo="$HOME/.local/share/flatpak/repo" >&2 || echo "[build] ostree refs failed" >&2
-        echo "[build] ======== END DEBUG ==========" >&2
+echo "[build] PACKAGES_DIR='$BUILD_PACKAGES_DIR'" >&2
+echo "[build] HOME='$HOME'" >&2
+echo "[build] VERSION_NAME='$BUILD_VERSION_NAME'" >&2
+echo "[build] VERSION_CODE='$BUILD_VERSION_CODE'" >&2
+echo "[build] flatpak repo path: $HOME/.local/share/flatpak/repo" >&2
+ls -la "$HOME/.local/share/flatpak/repo" >&2 || echo "[build] repo dir listing failed" >&2
+ostree refs --repo="$HOME/.local/share/flatpak/repo" >&2 || echo "[build] ostree refs failed" >&2
+echo "[build] ======== END DEBUG ==========" >&2
 
-        # Find the actual application ref from the OSTree repository (authoritative source)
-        APP_REF=$(ostree refs --repo="$HOME/.local/share/flatpak/repo" | grep "^app/com.retrotv.retro_tv/" | head -1)
-        if [ -z "$APP_REF" ]; then
-            echo "[build] ERROR: No application ref found for com.retrotv.retro_tv in OSTree repository" >&2
-            exit 1
-        fi
-        echo "[build] Found application ref: $APP_REF" >&2
-        
-        # Extract branch from the ref (format: app/com.retrotv.retro_tv/x86_64/<branch>)
-        BRANCH="${APP_REF##*/}"
-        if [ -z "$BRANCH" ]; then
-            echo "[build] ERROR: Could not extract branch from ref: $APP_REF" >&2
-            exit 1
-        fi
-        echo "[build] Using branch: $BRANCH" >&2
-        
-        flatpak build-bundle "$HOME/.local/share/flatpak/repo" \
-            '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"' \
-            com.retrotv.retro_tv "$BRANCH"
-        BUNDLE_RESULT=$?
-        if [ $BUNDLE_RESULT -ne 0 ]; then
-            echo "[build] ERROR: flatpak build-bundle failed with exit code $BUNDLE_RESULT" >&2
-            exit $BUNDLE_RESULT
-        fi
-        echo "[build] built '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"'" >&2
+# Find the actual application ref from the OSTree repository (authoritative source)
+APP_REF=$(ostree refs --repo="$HOME/.local/share/flatpak/repo" | grep "^app/com.retrotv.retro_tv/" | head -1)
+if [ -z "$APP_REF" ]; then
+    echo "[build] ERROR: No application ref found for com.retrotv.retro_tv in OSTree repository" >&2
+    exit 1
+fi
+echo "[build] Found application ref: $APP_REF" >&2
+
+# Extract branch from the ref (format: app/com.retrotv.retro_tv/x86_64/<branch>)
+BRANCH="${APP_REF##*/}"
+if [ -z "$BRANCH" ]; then
+    echo "[build] ERROR: Could not extract branch from ref: $APP_REF" >&2
+    exit 1
+fi
+echo "[build] Using branch: $BRANCH" >&2
+
+flatpak build-bundle "$HOME/.local/share/flatpak/repo" \
+    "$BUILD_PACKAGES_DIR/RetroTV-${BUILD_VERSION_NAME}.${BUILD_VERSION_CODE}.flatpak" \
+    com.retrotv.retro_tv "$BRANCH"
+BUNDLE_RESULT=$?
+if [ $BUNDLE_RESULT -ne 0 ]; then
+    echo "[build] ERROR: flatpak build-bundle failed with exit code $BUNDLE_RESULT" >&2
+    exit $BUNDLE_RESULT
+fi
+echo "[build] built '$BUILD_PACKAGES_DIR/RetroTV-${BUILD_VERSION_NAME}.${BUILD_VERSION_CODE}.flatpak'" >&2
 FLATPAK_SCRIPT_EOF
 
     chmod +x "$FLATPAK_SCRIPT"
     DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus" \
+    BUILD_PACKAGES_DIR="$PACKAGES_DIR" \
+    BUILD_VERSION_NAME="$VERSION_NAME" \
+    BUILD_VERSION_CODE="$VERSION_CODE" \
     dbus-run-session -- bash "$FLATPAK_SCRIPT"
     BUILDER_RESULT=$?
     rm -f "$FLATPAK_SCRIPT"
