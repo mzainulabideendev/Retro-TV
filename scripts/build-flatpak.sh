@@ -27,18 +27,31 @@ MANIFEST="$ROOT_DIR/flatpak/com.retrotv.retro_tv.yml"
 # manifest (e.g. 6.10) can disappear. Resolve the newest available
 # org.kde.Platform branch and pin the manifest to that.
 detect_kde_branch() {
-    local out
+    local out kde_branch="" line
     log "build-flatpak: querying flathub for org.kde.Platform branches"
     out="$(flatpak remote-ls --user flathub --arch=x86_64 2>&1)" || {
         log "flatpak remote-ls failed: $out"
         return 1
     }
     log "build-flatpak: remote-ls output (first 20 lines):"
-    printf '%s\n' "$out" | head -20
-    printf '%s\n' "$out" \
-        | grep '^org\.kde\.Platform' \
-        | head -n1 \
-        | sed -E 's#.*/([0-9][0-9.]*)$#\1#'
+    # Avoid pipeline SIGPIPE with set -euo pipefail: use a loop instead of head
+    i=0
+    while IFS= read -r line && [ $i -lt 20 ]; do
+        printf '%s\n' "$line"
+        i=$((i+1))
+    done <<< "$out"
+    # Extract KDE branch without head to avoid SIGPIPE
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^org\.kde\.Platform ]]; then
+            kde_branch="${line##*/}"
+            break
+        fi
+    done <<< "$out"
+    if [ -z "$kde_branch" ]; then
+        log "build-flatpak: ERROR: could not find org.kde.Platform branch in remote-ls output"
+        return 1
+    fi
+    printf '%s\n' "$kde_branch"
 }
 
 KDE_BRANCH="$(detect_kde_branch)"
