@@ -145,8 +145,14 @@ log "  DISPLAY: ${DISPLAY:-<unset>}"
 log "  DBUS_SESSION_BUS_ADDRESS: ${DBUS_SESSION_BUS_ADDRESS:-<unset>}"
 log "  XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR:-<unset>}"
 log "  HOME: $HOME"
-flatpak --user list --runtime 2>/dev/null | head -20 || log "  (no user runtimes)"
-flatpak --user list --app 2>/dev/null | head -10 || log "  (no user apps)"
+
+# Diagnostics with explicit error handling to avoid pipefail issues
+log "  User runtimes:" >&2
+flatpak --user list --runtime 2>/dev/null | head -20 || true
+log "  User apps:" >&2
+flatpak --user list --app 2>/dev/null | head -10 || true
+
+log "build-flatpak: ABOUT TO EXECUTE flatpak-builder via dbus-run-session" >&2
 
 # Ensure we have a D-Bus session for headless Flatpak operations
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-$UID}"
@@ -155,18 +161,28 @@ chmod 700 "$XDG_RUNTIME_DIR"
 
 # Start a D-Bus session for headless flatpak-builder
 if command -v dbus-run-session >/dev/null 2>&1; then
-    log "build-flatpak: starting dbus-run-session for flatpak-builder"
+    log "build-flatpak: starting dbus-run-session for flatpak-builder" >&2
     DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus" \
     dbus-run-session -- flatpak run --user org.flatpak.Builder \
         --user --install-deps-from=flathub --ccache --force-clean \
-        build/flatpak-build flatpak/com.retrotv.retro_tv.yml || die "flatpak-builder failed"
+        build/flatpak-build flatpak/com.retrotv.retro_tv.yml
+    BUILDER_RESULT=$?
+    if [ $BUILDER_RESULT -ne 0 ]; then
+        log "build-flatpak: ERROR: flatpak-builder failed with exit code $BUILDER_RESULT" >&2
+        exit $BUILDER_RESULT
+    fi
 else
-    log "build-flatpak: WARNING: dbus-run-session not found, attempting without"
+    log "build-flatpak: WARNING: dbus-run-session not found, attempting without" >&2
     flatpak run --user org.flatpak.Builder \
         --user --install-deps-from=flathub --ccache --force-clean \
-        build/flatpak-build flatpak/com.retrotv.retro_tv.yml || die "flatpak-builder failed"
+        build/flatpak-build flatpak/com.retrotv.retro_tv.yml
+    BUILDER_RESULT=$?
+    if [ $BUILDER_RESULT -ne 0 ]; then
+        log "build-flatpak: ERROR: flatpak-builder failed with exit code $BUILDER_RESULT" >&2
+        exit $BUILDER_RESULT
+    fi
 fi
-log "build-flatpak: flatpak-builder completed"
+log "build-flatpak: flatpak-builder completed" >&2
 
 mkdir -p "$PACKAGES_DIR"
 log "build-flatpak: creating flatpak bundle"
