@@ -22,6 +22,11 @@ PKG_DIR="$ROOT_DIR/packaging/arch"
 PKGDEST="${PKGDEST:-$PACKAGES_DIR}"
 mkdir -p "$PKGDEST" "$BUILD_DIR/arch"
 
+# Pre-create git config for the build user to avoid permission issues when
+# the Flutter build system runs git internally on the root-owned SDK.
+git config --global --add safe.directory /opt/flutter-sdk
+git config --global --add safe.directory '*'
+
 cd "$PKG_DIR"
 BUILDDIR="$BUILD_DIR/arch" PKGDEST="$PKGDEST" \
     makepkg -f --noconfirm --cleanbuild
