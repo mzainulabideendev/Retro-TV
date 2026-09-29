@@ -190,15 +190,27 @@ if [ -z "$BRANCH" ]; then
 fi
 echo "[build] Using branch: $BRANCH" >&2
 
-flatpak build-bundle "$HOME/.local/share/flatpak/repo" \
-    '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"' \
-    com.retrotv.retro_tv "$BRANCH"
-BUNDLE_RESULT=$?
-if [ $BUNDLE_RESULT -ne 0 ]; then
-    echo "[build] ERROR: flatpak build-bundle failed with exit code $BUNDLE_RESULT" >&2
-    exit $BUNDLE_RESULT
-fi
-echo "[build] built '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"'" >&2
+echo "[build] ======== FINAL FLATPAK BUNDLE DEBUG ==========" >&2
+        echo "[build] PACKAGES_DIR='$PACKAGES_DIR'" >&2
+        echo "[build] HOME='$HOME'" >&2
+        echo "[build] BRANCH='$BRANCH'" >&2
+        echo "[build] VERSION_NAME='$VERSION_NAME'" >&2
+        echo "[build] VERSION_CODE='$VERSION_CODE'" >&2
+        echo "[build] PACKAGES_DIR='$PACKAGES_DIR'" >&2
+        echo "[build] flatpak repo path: $HOME/.local/share/flatpak/repo" >&2
+        ls -la "$HOME/.local/share/flatpak/repo" >&2 || echo "[build] repo dir listing failed" >&2
+        ostree refs --repo="$HOME/.local/share/flatpak/repo" >&2 || echo "[build] ostree refs failed" >&2
+        echo "[build] ======== END DEBUG ==========" >&2
+
+        flatpak build-bundle "$HOME/.local/share/flatpak/repo" \
+            '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"' \
+            com.retrotv.retro_tv "$BRANCH"
+        BUNDLE_RESULT=$?
+        if [ $BUNDLE_RESULT -ne 0 ]; then
+            echo "[build] ERROR: flatpak build-bundle failed with exit code $BUNDLE_RESULT" >&2
+            exit $BUNDLE_RESULT
+        fi
+        echo "[build] built '"$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak"'" >&2
 FLATPAK_SCRIPT_EOF
 
     chmod +x "$FLATPAK_SCRIPT"
@@ -230,23 +242,23 @@ else
         BRANCH="master"
     fi
     log "build-flatpak: using branch: $BRANCH" >&2
+    
+    # ======== FINAL FLATPAK BUNDLE DEBUG =========
+    log "build-flatpak: ======== FINAL FLATPAK BUNDLE DEBUG ==========" >&2
+    log "build-flatpak: PACKAGES_DIR='$PACKAGES_DIR'" >&2
+    log "build-flatpak: HOME='$HOME'" >&2
+    log "build-flatpak: BRANCH='$BRANCH'" >&2
+    log "build-flatpak: VERSION_NAME='$VERSION_NAME'" >&2
+    log "build-flatpak: VERSION_CODE='$VERSION_CODE'" >&2
+    log "build-flatpak: flatpak repo path: $HOME/.local/share/flatpak/repo" >&2
+    ls -la "$HOME/.local/share/flatpak/repo" >&2 || log "build-flatpak: repo dir listing failed" >&2
+    ostree refs --repo="$HOME/.local/share/flatpak/repo" >&2 || log "build-flatpak: ostree refs failed" >&2
+    log "build-flatpak: ======== END DEBUG ==========" >&2
+    # ======== END DEBUG =========
+    
     flatpak build-bundle "$HOME/.local/share/flatpak/repo" \
         "$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak" \
         com.retrotv.retro_tv "$BRANCH"
-    BUNDLE_RESULT=$?
-    if [ $BUNDLE_RESULT -ne 0 ]; then
-        log "build-flatpak: ERROR: flatpak build-bundle failed with exit code $BUNDLE_RESULT" >&2
-        exit $BUNDLE_RESULT
-    fi
-    log "built $PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak" >&2
-fi
-log "build-flatpak: flatpak-builder completed" >&2
-
-    mkdir -p "$PACKAGES_DIR"
-    log "build-flatpak: creating flatpak bundle" >&2
-    flatpak build-bundle "$HOME/.local/share/flatpak/repo" \
-        "$PACKAGES_DIR/RetroTV-${VERSION_NAME}.${VERSION_CODE}.flatpak" \
-        com.retrotv.retro_tv master
     BUNDLE_RESULT=$?
     if [ $BUNDLE_RESULT -ne 0 ]; then
         log "build-flatpak: ERROR: flatpak build-bundle failed with exit code $BUNDLE_RESULT" >&2
