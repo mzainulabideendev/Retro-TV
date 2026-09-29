@@ -234,10 +234,12 @@ jobs:
           
           echo "[build] Installing dpkg-sig from source..."
           # dpkg-sig is not in Ubuntu 24.04 repos; build from source
-          sudo apt-get install -y --no-install-recommends build-essential debhelper devscripts git
+          sudo apt-get install -y --no-install-recommends build-essential debhelper devscripts
           cd /tmp
-          git clone --depth 1 https://salsa.debian.org/debian/dpkg-sig.git
-          cd dpkg-sig
+          wget -q "http://archive.ubuntu.com/ubuntu/pool/universe/d/dpkg-sig/dpkg-sig_0.13.1+git20210118-1.dsc" -O dpkg-sig.dsc
+          wget -q "http://archive.ubuntu.com/ubuntu/pool/universe/d/dpkg-sig/dpkg-sig_0.13.1+git20210118-1.tar.xz" -O dpkg-sig_0.13.1+git20210118-1.tar.xz
+          dpkg-source -x dpkg-sig.dsc
+          cd dpkg-sig-*/
           dpkg-buildpackage -us -uc -b
           sudo dpkg -i ../dpkg-sig_*.deb
           
