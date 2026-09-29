@@ -46,6 +46,12 @@ jobs:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            build-essential clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libstdc++-13-dev libmpv2 xvfb
       - name: Dependencies
         run: flutter pub get
       - name: Analyze
@@ -54,10 +60,6 @@ jobs:
         run: flutter test
       - name: Build Linux (release)
         run: bash scripts/build-linux.sh
-      - name: Install smoke-test dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb libmpv2
       - name: Headless launch smoke test
         run: bash scripts/launch-smoke-test.sh
       - uses: actions/upload-artifact@v4
