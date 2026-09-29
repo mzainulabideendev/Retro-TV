@@ -60,7 +60,10 @@ ensure_build_ids() {
     # elfbuildid (Fedora elfutils) or eu-build-id (older/other distros) can add
     # a random build-id to an ELF file that lacks one.
     for c in elfbuildid eu-build-id; do
-        command -v "$c" >/dev/null 2>&1 && { cmd="$c"; break; }
+        if command -v "$c" >/dev/null 2>&1; then
+            cmd="$c"
+            break
+        fi
     done
     [ -n "$cmd" ] || { log "warning: no elfbuildid/eu-build-id found; skipping build-id injection"; return 0; }
     while IFS= read -r -d '' f; do

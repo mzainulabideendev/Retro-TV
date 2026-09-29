@@ -23,8 +23,9 @@ MANIFEST="$ROOT_DIR/flatpak/com.retrotv.retro_tv.yml"
 # org.kde.Platform branch and pin the manifest to that.
 detect_kde_branch() {
     flatpak remote-ls --user flathub --arch=x86_64 2>/dev/null \
-        | awk '/^org\.kde\.Platform\/x86_64\/[0-9]/ { sub(/.*\//, "", $1); print $1 }' \
-        | sort -V | tail -n1
+        | grep '^org\.kde\.Platform' \
+        | head -n1 \
+        | sed -E 's#.*/([0-9][0-9.]*)$#\1#'
 }
 
 KDE_BRANCH="$(detect_kde_branch)"

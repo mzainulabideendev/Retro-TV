@@ -146,8 +146,6 @@ jobs:
         run: |
           useradd -m build
           chown -R build:build "$GITHUB_WORKSPACE"
-          # git safe.directory for the flutter SDK must be configured for the build user too
-          su - build -c "git config --global --add safe.directory /opt/flutter-sdk; git config --global --add safe.directory '*'"
           su - build -c "export PATH=/opt/flutter-sdk/bin:\$PATH; export PUB_CACHE='$GITHUB_WORKSPACE/.pub-cache'; cd '$GITHUB_WORKSPACE' && bash scripts/build-arch.sh"
       - name: Install and verify executable (pacman)
         run: |

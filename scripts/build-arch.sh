@@ -9,6 +9,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
+# git refuses to operate on directories owned by another user (the Flutter SDK
+# was extracted as root); allow it for the build user.
+git config --global --add safe.directory /opt/flutter-sdk
+git config --global --add safe.directory '*'
+
 [ "$(id -u)" -ne 0 ] || die "makepkg refuses to run as root; run as a build user"
 command -v makepkg >/dev/null 2>&1 || die "makepkg not found"
 read_version
