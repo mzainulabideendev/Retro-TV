@@ -1,3 +1,4 @@
+%global debug_package %{nil}
 %global _debugsource_template %%{nil}
 %global _debuginfo_template %%{nil}
 

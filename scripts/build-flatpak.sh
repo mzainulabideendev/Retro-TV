@@ -33,7 +33,8 @@ detect_kde_branch() {
         log "flatpak remote-ls failed: $out"
         return 1
     }
-    log "build-flatpak: remote-ls output: $out"
+    log "build-flatpak: remote-ls output (first 20 lines):"
+    echo "$out" | head -20
     echo "$out" \
         | grep '^org\.kde\.Platform' \
         | head -n1 \
