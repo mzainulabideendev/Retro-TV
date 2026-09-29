@@ -236,14 +236,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends apt-utils createrepo-c rpm
           
-          echo "[build] Installing dpkg-sig..."
-          sudo apt-get install -y --no-install-recommends dpkg-sig || {
-            echo "[build] dpkg-sig not available in default repos, checking alternatives..."
-            apt-cache policy dpkg-sig || true
-            apt-cache search '^dpkg-sig$' || true
-            echo "[build] dpkg-sig not available in default repos"
-            exit 1
-          }
+          echo "[build] Checking dpkg-sig availability..."
+          if apt-cache policy dpkg-sig | grep -q "Candidate: (none)"; then
+            echo "[build] dpkg-sig not available in default Ubuntu 24.04 repos, installing from source..."
+            # Install build dependencies
+            sudo apt-get install -y --no-install-recommends build-essential debhelper devscripts git
+            # Build dpkg-sig from source
+            cd /tmp
+            git clone https://salsa.debian.org/debian/dpkg-sig.git
+            cd dpkg-sig
+            dpkg-buildpackage -us -uc -b
+            sudo dpkg -i ../dpkg-sig_*.deb
+          else
+            sudo apt-get install -y --no-install-recommends dpkg-sig
+          fi
           
           # Verify dpkg-sig is available
           command -v dpkg-sig >/dev/null 2>&1 || {
