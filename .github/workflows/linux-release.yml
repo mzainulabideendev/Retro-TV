@@ -136,6 +136,8 @@ jobs:
           curl -fsSL "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz" -o /tmp/flutter.tar.xz
           mkdir -p /opt/flutter-sdk
           tar -xJf /tmp/flutter.tar.xz -C /opt/flutter-sdk --strip-components=1
+          git config --global --add safe.directory /opt/flutter-sdk
+          git config --global --add safe.directory '*'
           /opt/flutter-sdk/bin/flutter --version
       - name: Build PKGBUILD (non-root)
         run: |
