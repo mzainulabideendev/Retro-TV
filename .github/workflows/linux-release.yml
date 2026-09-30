@@ -35,16 +35,44 @@ jobs:
       - uses: actions/checkout@v4
       - id: version
         run: |
+          # Decide where the version comes from BEFORE validating anything.
+          # On workflow_dispatch, GITHUB_REF_NAME is a BRANCH name, never a
+          # release tag, so comparing it against the pubspec version produces a
+          # misleading "release tag ... does not match" warning. Only a real
+          # tag push is a release.
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            source="release tag"
+          else
+            source="pubspec.yaml"
+          fi
+
           line="$(grep -E '^version:' pubspec.yaml | head -n1)"
           full="$(echo "$line" | sed -E 's/^version:[[:space:]]*//; s/[[:space:]]*$//')"
           name="${full%%+*}"
           code="${full##*+}"
+
+          echo "EVENT:          $GITHUB_EVENT_NAME"
+          echo "REF:            $GITHUB_REF"
+          echo "REF_NAME:       $GITHUB_REF_NAME"
+          echo "REF_TYPE:       $GITHUB_REF_TYPE"
+          echo "VERSION SOURCE: $source"
+          echo "VERSION:        $full (name=$name code=$code)"
+
           echo "name=$name" >> "$GITHUB_OUTPUT"
           echo "code=$code" >> "$GITHUB_OUTPUT"
           echo "full=$full" >> "$GITHUB_OUTPUT"
-          tag="${GITHUB_REF_NAME#v}"
-          if [ "$tag" != "$name" ]; then
-            echo "::warning::release tag $GITHUB_REF_NAME does not match pubspec version $full"
+
+          # Release-tag validation runs ONLY for a real tag push, and its
+          # behaviour is unchanged from the original workflow: a mismatch is
+          # reported as a warning, exactly as before. Nothing here can fail the
+          # job, so production tag releases behave precisely as they did.
+          if [ "$source" = "release tag" ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            if [ "$tag" != "$name" ]; then
+              echo "::warning::release tag $GITHUB_REF_NAME does not match pubspec version $full"
+            fi
+          else
+            echo "[version] $GITHUB_EVENT_NAME on '$GITHUB_REF_NAME' is not a release tag push; using pubspec version $full (tag validation skipped)"
           fi
 
   test-build-linux:
@@ -257,6 +285,16 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: debian:bullseye-slim
+    # Bash must be requested explicitly. Without this, run: steps inside a
+    # container job fall back to the runner default, which resolved to
+    # "sh -e {0}" (dash) here, and dash's set has no -o pipefail. That killed
+    # the bootstrap step on its very first line with
+    # "set: Illegal option -o pipefail" (exit 2) before apt ever ran.
+    # The steps below are written for bash (set -euo pipefail, [[ ]]), so the
+    # correct fix is to declare bash - not to rewrite them as POSIX sh.
+    defaults:
+      run:
+        shell: bash
     env:
       # Fixed, immutable snapshot.debian.org capture. See the comment above.
       DEB_SNAPSHOT: '20260831T000000Z'
