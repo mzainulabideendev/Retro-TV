@@ -36,6 +36,8 @@ echo "[1/8] apt-get update"
 # The CI container uses a pinned Debian snapshot whose signed Release metadata
 # has an expired Valid-Until. Disable only that freshness check for this update;
 # APT still verifies the repository signatures as usual.
+# Ensure the unprivileged APT downloader can create its staged index files.
+install -d -o _apt -g root -m 0700 /var/lib/apt/lists/partial
 apt-get -o Acquire::Check-Valid-Until=false update -qq \
     || { echo "test-apt-install: apt update FAILED" >&2; exit 1; }
 
