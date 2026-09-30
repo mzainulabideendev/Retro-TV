@@ -13,21 +13,33 @@
 #   D) base64 text of base64 text of A, B or C
 #
 # The stored secret is currently D, so the format is DETECTED and never assumed.
-# At most MAX_DECODE_LAYERS base64 layers are peeled, stopping as soon as
-# ASCII-armored or binary OpenPGP data is recognised, and gpg stays the final
-# authority: whatever survives detection is handed straight to `gpg --import`,
-# and a failed import fails the build.
+#
+# SELECTION IS AUTHORITATIVE
+# --------------------------
+# "not ASCII armor" does NOT mean "valid binary OpenPGP". The previous build
+# assumed exactly that and handed gpg 13936 bytes of the wrong encoding, which
+# gpg rejected with "partial length invalid for packet type 63 / Invalid
+# keyring". Now every candidate is first parsed by
+#
+#     gpg --batch --list-packets "$candidate"
+#
+# in a scratch GNUPGHOME, and only a candidate gpg accepts as OpenPGP can be
+# selected. A rejected candidate is peeled one more base64 layer if it really is
+# base64 text (up to MAX_DECODE_LAYERS); otherwise the build fails with the
+# candidate metadata above it. Bytes are never truncated, padded or otherwise
+# "repaired". `gpg --import` remains the final authority and a failed import
+# still fails the build.
 #
 # BINARY SAFETY
 # -------------
 # OpenPGP data is binary. It is NEVER captured in a shell variable:
 # `decoded="$(base64 --decode ...)"` silently discards every NUL byte and is
-# what produced "warning: command substitution: ignored null byte in input"
-# followed by "partial length invalid for packet type 63 / Invalid keyring".
+# what produced "warning: command substitution: ignored null byte in input".
 # Every decoding step therefore writes to its own 0600 file inside a 0700
 # temporary directory, format detection only ever inspects those files, and gpg
 # is pointed at the file directly. No key byte, armor block, base64 payload or
-# passphrase is ever written to the log.
+# passphrase is ever written to the log; only lengths, a SHA-256 and a 16-byte
+# hex prefix of each candidate are printed.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
@@ -93,7 +105,6 @@ trap cleanup EXIT HUP INT TERM
 
 # --- sanitized metadata, safe to print --------------------------------------
 log "GPG_PRIVATE_KEY is present"
-log "input length: ${#GPG_PRIVATE_KEY} characters"
 log "GNUPGHOME=$GNUPGHOME"
 log "GPG_PRIVATE_KEY_FORMAT: $GPG_PRIVATE_KEY_FORMAT"
 # sed reads the whole stream instead of exiting early, so gpg is never killed by
@@ -144,33 +155,131 @@ is_base64_text() {
     return 0
 }
 
+# PowerShell 5.1 can re-encode redirected native-command output as UTF-16.
+# Accept that legacy export only when decoding yields the expected armor header;
+# GPG still validates the converted OpenPGP data below.
+normalize_utf16_armor() {
+    local file="$1" normalized encoding
+    command -v iconv >/dev/null 2>&1 || return 1
+    for encoding in UTF-16 UTF-16LE UTF-16BE; do
+        normalized="$TMP_DIR/utf16.$layers.$encoding"
+        if iconv -f "$encoding" -t UTF-8 "$file" > "$normalized" 2>/dev/null \
+            && is_armored_private_key "$normalized"; then
+            chmod 600 "$normalized"
+            printf '%s' "$normalized"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# --- candidate validation: gpg decides, not guessing -------------------------
+# "not ASCII armor" does NOT mean "valid binary OpenPGP": the release build
+# failed exactly there, handing gpg 13936 bytes of the wrong encoding and
+# getting "partial length invalid for packet type 63 / Invalid keyring".
+# So every candidate is parsed by gpg in a scratch home before it can be
+# selected. --list-packets writes packet details to a file inside TMP_DIR that
+# is never printed, and its exit status is the only thing used here.
+VALIDATE_HOME="$TMP_DIR/validate-home"
+mkdir -p "$VALIDATE_HOME"
+chmod 700 "$VALIDATE_HOME"
+
+# SHA-256 and a short hex prefix of a candidate: safe metadata that identifies
+# WHICH bytes were inspected without ever revealing key material.
+candidate_digest() {
+    local file="$1" digest prefix
+    if command -v sha256sum >/dev/null 2>&1; then
+        digest="$(sha256sum < "$file" | cut -d' ' -f1)"
+    elif command -v shasum >/dev/null 2>&1; then
+        digest="$(shasum -a 256 < "$file" | cut -d' ' -f1)"
+    else
+        digest="unavailable"
+    fi
+    # 16 bytes of prefix, hex only, never the bytes themselves.
+    prefix="$(od -An -tx1 -N16 < "$file" 2>/dev/null | tr -d ' \n')"
+    [[ -n "$prefix" ]] || prefix="unavailable"
+    printf '%s/%s' "$digest" "$prefix"
+}
+
+# 0 when gpg can parse the file as OpenPGP, non-zero otherwise.
+is_valid_openpgp() {
+    local file="$1"
+    gpg --batch --no-tty --quiet --homedir "$VALIDATE_HOME" \
+        --list-packets "$file" >"$TMP_DIR/packets.out" 2>"$TMP_DIR/packets.err"
+}
+
 # --- write the secret once, verbatim -----------------------------------------
 # printf '%s' keeps the value data-only (no format interpretation) and adds no
 # newline. The content is never echoed back.
 INPUT_FILE="$TMP_DIR/input"
+INPUT_LENGTH="${#GPG_PRIVATE_KEY}"
 printf '%s' "$GPG_PRIVATE_KEY" > "$INPUT_FILE"
 chmod 600 "$INPUT_FILE"
 KEY_FILE="$INPUT_FILE"
 unset GPG_PRIVATE_KEY
 
-# --- peel base64 layers until real OpenPGP data appears ----------------------
+# --- pick the first candidate gpg itself accepts as OpenPGP -------------------
+# Order of authority, per candidate:
+#   1. gpg --list-packets must parse it            -> "OpenPGP validation: PASS"
+#   2. otherwise, if it is base64 text, peel one more layer (max MAX_DECODE_LAYERS)
+#   3. otherwise this candidate is rejected and the build fails
+# The real import still happens further down; validation only decides WHICH
+# bytes are offered to it.
 layers=0
 min_layers=0
 detected=""
+selected=""
 case "$GPG_PRIVATE_KEY_FORMAT" in
   base64) min_layers=1 ;;
 esac
 
+log "input length: $INPUT_LENGTH characters"
+unset INPUT_LENGTH
+log "sha256(input): $(candidate_digest "$INPUT_FILE")"
+
 while :; do
+    log "candidate ${layers}: bytes=$(wc -c < "$KEY_FILE") mode=$(stat -c '%a' "$KEY_FILE") sha256/prefix=$(candidate_digest "$KEY_FILE")"
+
     if is_armored_private_key "$KEY_FILE"; then
-        detected="ascii-armor"
+        log "candidate ${layers}: armor=yes"
+    else
+        log "candidate ${layers}: armor=no"
+    fi
+
+    if is_base64_text "$KEY_FILE"; then
+        log "candidate ${layers}: base64_text=yes"
+    else
+        log "candidate ${layers}: base64_text=no"
+    fi
+
+    valid_openpgp=0
+    if is_valid_openpgp "$KEY_FILE"; then
+        valid_openpgp=1
+    elif normalized_file="$(normalize_utf16_armor "$KEY_FILE")" \
+        && is_valid_openpgp "$normalized_file"; then
+        KEY_FILE="$normalized_file"
+        valid_openpgp=1
+        log "candidate ${layers}: normalized legacy UTF-16 armored export"
+    fi
+
+    if (( valid_openpgp )); then
+        log "candidate ${layers}: OpenPGP validation: PASS"
+        if is_armored_private_key "$KEY_FILE"; then
+            detected="ascii-armor"
+        else
+            detected="binary-openpgp"
+        fi
+        selected="$KEY_FILE"
         break
     fi
+
+    log "candidate ${layers}: OpenPGP validation: FAIL"
+
+    # Explicit GPG_PRIVATE_KEY_FORMAT=base64 still peels one layer even when the
+    # file does not look like base64, so a malformed secret fails loudly here
+    # instead of being handed to gpg.
     if (( layers < min_layers )); then
-        # Explicit GPG_PRIVATE_KEY_FORMAT=base64: decode once even when the file
-        # does not look like base64, so a malformed secret fails loudly here
-        # instead of being handed to gpg.
-        next_file="$TMP_DIR/decoded.$(( layers + 1 ))"
+        next_file="$TMP_DIR/candidate.$(( layers + 1 ))"
         : > "$next_file"
         chmod 600 "$next_file"
         if ! b64_decode "$KEY_FILE" "$next_file"; then
@@ -179,23 +288,22 @@ while :; do
         fi
         layers=$(( layers + 1 ))
         KEY_FILE="$next_file"
-        log "decoded layer ${layers}: $(wc -c < "$KEY_FILE") bytes"
         continue
     fi
+
     if [[ "$GPG_PRIVATE_KEY_FORMAT" == armor ]]; then
         detected="armor-missing"
         break
     fi
+
+    # Not valid OpenPGP as it stands. Only peel another layer when the bytes
+    # really are base64 text; never "repair" data that gpg has rejected.
     if is_base64_text "$KEY_FILE"; then
-        # The payload is base64 text again, i.e. the secret is base64-encoded
-        # twice (or more). Decode the next layer and classify that result,
-        # instead of handing base64 text to gpg - which is exactly what made the
-        # build fail with "partial length invalid for packet type 63".
         if (( layers >= MAX_DECODE_LAYERS )); then
             detected="layer-limit"
             break
         fi
-        next_file="$TMP_DIR/decoded.$(( layers + 1 ))"
+        next_file="$TMP_DIR/candidate.$(( layers + 1 ))"
         : > "$next_file"
         chmod 600 "$next_file"
         if ! b64_decode "$KEY_FILE" "$next_file"; then
@@ -204,15 +312,10 @@ while :; do
         fi
         layers=$(( layers + 1 ))
         KEY_FILE="$next_file"
-        log "detected base64 text, decoded layer ${layers}: $(wc -c < "$KEY_FILE") bytes"
         continue
     fi
-    if is_other_pgp_armor "$KEY_FILE"; then
-        detected="wrong-pgp-armor"
-        break
-    fi
-    # Neither armor nor base64 text: assume binary OpenPGP and let gpg decide.
-    detected="binary-opengep"
+
+    detected="invalid-openpgp"
     break
 done
 
@@ -221,13 +324,10 @@ log "base64 layers decoded: $layers"
 
 case "$detected" in
     ascii-armor)
-        log "detected key format: ASCII-armored PGP private key"
+        log "detected key format: ASCII-armored PGP private key (validated)"
         ;;
-    binary-opengep)
-        log "detected key format: binary OpenPGP private key"
-        ;;
-    wrong-pgp-armor)
-        die "GPG_PRIVATE_KEY holds a PGP armor block, but not a PRIVATE KEY block"
+    binary-openpgp)
+        log "detected key format: binary OpenPGP private key (validated)"
         ;;
     armor-missing)
         die "GPG_PRIVATE_KEY is not ASCII-armored (GPG_PRIVATE_KEY_FORMAT=armor)"
@@ -238,10 +338,16 @@ case "$detected" in
     layer-limit)
         die "ERROR: GPG_PRIVATE_KEY is still base64 text after ${MAX_DECODE_LAYERS} decoding layers; expected Base64 or ASCII-armored OpenPGP data"
         ;;
+    invalid-openpgp)
+        die "GPG_PRIVATE_KEY does not contain valid OpenPGP key material in any supported encoding. The decoded candidate is neither ASCII-armored OpenPGP nor binary OpenPGP (gpg --list-packets rejected it, see the candidate metadata above). The stored secret is likely corrupted or encoded differently than documented in keys/README.md; re-create it from the armored export and do not paste it into logs."
+        ;;
     *)
         die "internal error: unknown key format classification"
         ;;
 esac
+
+[[ -n "$selected" ]] || die "internal error: no validated OpenPGP candidate was selected"
+KEY_FILE="$selected"
 
 # --- gpg is the authoritative parser ----------------------------------------
 # gpg reads the file itself; the key bytes never pass through a shell variable.

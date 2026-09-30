@@ -21,7 +21,7 @@ This repository already contains the **public** key (safe to commit):
 1. On your machine (PowerShell), export the private key to base64 — export to a
    temp file, base64 it, then delete the file (never put it in this repo):
    ```powershell
-   gpg --armor --export-secret-keys 570D2F04129940F1A8561E4C35111918F6D14EA9 > "$env:TEMP\retro-tv-secret.asc"
+   gpg --armor --output "$env:TEMP\retro-tv-secret.asc" --export-secret-keys 570D2F04129940F1A8561E4C35111918F6D14EA9
    $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:TEMP\retro-tv-secret.asc"))
    Remove-Item "$env:TEMP\retro-tv-secret.asc"
    Write-Output $b64
