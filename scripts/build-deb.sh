@@ -44,7 +44,9 @@ sed -i -e "s/^Installed-Size: .*/Installed-Size: $INSTALLED_SIZE/" "$STAGE/DEBIA
 install -m755 "$ROOT_DIR/packaging/deb/postinst" "$STAGE/DEBIAN/postinst"
 install -m755 "$ROOT_DIR/packaging/deb/postrm" "$STAGE/DEBIAN/postrm"
 
-dpkg-deb --build --root-owner-group "$STAGE" "$OUT"
+# Bullseye's dpkg-deb cannot read zstd-compressed archives produced by newer
+# Ubuntu dpkg-deb defaults. XZ is supported by both build and verification jobs.
+dpkg-deb --build --root-owner-group -Z xz "$STAGE" "$OUT"
 log "built $OUT"
 
 # Optional .deb signature (used by the signed APT repository).

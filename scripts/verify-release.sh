@@ -13,6 +13,11 @@ source "$SCRIPT_DIR/common.sh"
 read_version
 DEB_NAME="retro-tv_${VERSION_NAME}-${VERSION_CODE}_amd64.deb"
 RPM_NAME="retro-tv-${VERSION_NAME}-${VERSION_CODE}.x86_64.rpm"
+RPM_FILE="$(find "$PACKAGES_DIR" -maxdepth 1 -type f \
+    -name "retro-tv-${VERSION_NAME}-${VERSION_CODE}*.x86_64.rpm" -print -quit 2>/dev/null || true)"
+if [[ -z "$RPM_FILE" ]]; then
+    RPM_FILE="$PACKAGES_DIR/$RPM_NAME"
+fi
 PASS=1
 
 check() {
@@ -21,7 +26,7 @@ check() {
 
 echo "== package presence =="
 check "test -f '$PACKAGES_DIR/$DEB_NAME'"
-check "test -f '$PACKAGES_DIR/$RPM_NAME'"
+check "test -f '$RPM_FILE'"
 check "test -f '$PACKAGES_DIR/SHA256SUMS'"
 check "test -f '$REPOSITORY_DIR/apt/dists/stable/InRelease'"
 check "test -f '$REPOSITORY_DIR/apt/dists/stable/Release.gpg'"
@@ -35,7 +40,7 @@ echo "== checksums (SHA256SUMS) =="
 check "cd '$PACKAGES_DIR' && sha256sum -c SHA256SUMS"
 
 echo "== APT repo signature chain =="
-check "gpgv --keyring '$REPOSITORY_DIR/apt/retro-tv-archive-keyring.gpg' '$REPOSITORY_DIR/apt/dists/stable/InRelease' '$REPOSITORY_DIR/apt/dists/stable/Release'"
+check "gpgv --keyring '$REPOSITORY_DIR/apt/retro-tv-archive-keyring.gpg' '$REPOSITORY_DIR/apt/dists/stable/InRelease'"
 check "cd '$REPOSITORY_DIR/apt/dists/stable' && gpgv --keyring '$REPOSITORY_DIR/apt/retro-tv-archive-keyring.gpg' Release.gpg Release"
 
 echo "== DNF repo signature =="
@@ -51,7 +56,7 @@ echo "== .rpm integrity and signature =="
 if command -v rpm >/dev/null 2>&1; then
     rpm --import "$REPOSITORY_DIR/apt/retro-tv-archive-keyring.gpg" 2>/dev/null || true
 fi
-check "rpm --checksig '$PACKAGES_DIR/$RPM_NAME'"
+check "rpm --checksig '$RPM_FILE'"
 
 echo "== bundle layout inside deb =="
 check "dpkg-deb -c '$PACKAGES_DIR/$DEB_NAME' | grep -q 'usr/lib/retro-tv/retro_tv$'"
@@ -62,7 +67,7 @@ echo "== .deb carries our expected version =="
 check "dpkg-deb -f '$PACKAGES_DIR/$DEB_NAME' Version | grep -q '^${VERSION_NAME}-${VERSION_CODE}\$'"
 
 echo "== .rpm carries our expected version =="
-check "rpm -qp --qf '%{EPOCHNUM}:%{VERSION}-%{RELEASE}\\n' '$PACKAGES_DIR/$RPM_NAME' 2>/dev/null | grep -q '${VERSION_NAME}-${VERSION_CODE}'"
+check "rpm -qp --qf '%{EPOCHNUM}:%{VERSION}-%{RELEASE}\\n' '$RPM_FILE' 2>/dev/null | grep -q '${VERSION_NAME}-${VERSION_CODE}'"
 
 if [ "$PASS" -eq 1 ]; then
     echo "verify-release: ALL CHECKS PASSED"
