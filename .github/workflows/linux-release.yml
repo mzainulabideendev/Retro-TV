@@ -335,6 +335,43 @@ jobs:
           echo "=== [bootstrap] apt-get update against the pinned snapshot only ==="
           apt-get -o Acquire::Check-Valid-Until=false update
           echo
+          echo "=== [bootstrap] DIAGNOSTIC: active apt sources (authoritative) ==="
+          grep -RhE '^[[:space:]]*deb ' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null | sort -u || true
+          echo "--- any source that is NOT a pinned snapshot (must print none) ---"
+          if grep -RhE '^[[:space:]]*deb ' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null \
+               | grep -v 'snapshot\.debian\.org/archive/'; then
+            echo "!!! UNEXPECTED NON-SNAPSHOT SOURCE ACTIVE !!!"
+          else
+            echo "OK: every active source is a pinned snapshot.debian.org capture"
+          fi
+          echo
+          echo "=== [bootstrap] DIAGNOSTIC: perl / perl-base candidates ==="
+          apt-cache policy perl perl-base || true
+          echo
+          echo "--- madison (every version apt can see, and from where) ---"
+          apt-cache madison perl perl-base || true
+          echo
+          echo "--- full metadata for each version of perl / perl-base ---"
+          for pkg in perl perl-base; do
+            echo "### apt-cache show $pkg"
+            apt-cache show "$pkg" 2>/dev/null \
+              | grep -E '^(Package|Version|Depends|Priority|Essential|Source):' || true
+            echo
+          done
+          echo "--- which prerequisite pulls perl in? ---"
+          for pkg in git sudo file ca-certificates; do
+            printf '%s: ' "$pkg"
+            if apt-cache depends "$pkg" 2>/dev/null | grep -qiE 'perl'; then
+              apt-cache depends "$pkg" 2>/dev/null | grep -iE 'perl' | tr -s ' ' | tr '\n' ' ' || true
+              echo
+            else
+              echo "(no perl dependency)"
+            fi
+          done
+          echo
+          echo "=== [bootstrap] DIAGNOSTIC: dry-run resolution (changes nothing) ==="
+          apt-get -s -o Acquire::Check-Valid-Until=false install -y --no-install-recommends git sudo file ca-certificates 2>&1 | tail -n 45 || true
+          echo
           echo "=== [bootstrap] installing container prerequisites ==="
           apt-get install -y --no-install-recommends git sudo file ca-certificates
       - uses: actions/checkout@v4
