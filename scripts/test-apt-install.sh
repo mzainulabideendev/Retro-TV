@@ -33,7 +33,11 @@ cleanup() { rm -f "$LIST"; }
 trap cleanup EXIT
 
 echo "[1/8] apt-get update"
-apt-get update -qq || { echo "test-apt-install: apt update FAILED" >&2; exit 1; }
+# The CI container uses a pinned Debian snapshot whose signed Release metadata
+# has an expired Valid-Until. Disable only that freshness check for this update;
+# APT still verifies the repository signatures as usual.
+apt-get -o Acquire::Check-Valid-Until=false update -qq \
+    || { echo "test-apt-install: apt update FAILED" >&2; exit 1; }
 
 echo "[2/8] locate package (apt-cache policy)"
 apt-cache policy retro-tv
