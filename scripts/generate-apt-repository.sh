@@ -54,4 +54,9 @@ gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
 # Machine-readable keyring for /etc/apt/keyrings/retro-tv-archive-keyring.gpg
 install -m644 "$BUILD_DIR/release.gpg" "$APT_DIR/retro-tv-archive-keyring.gpg"
 
+# setup-gpg.sh sets umask 077 while handling private material. This generated
+# repository is public and APT's sandboxed _apt user must be able to traverse
+# directories and read its indexes and packages.
+chmod -R a+rX "$APT_DIR"
+
 log "apt repository ready at $APT_DIR (dists/stable + pool, InRelease signed)"
