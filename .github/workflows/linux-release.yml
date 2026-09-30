@@ -5,6 +5,16 @@ on:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+*'
   workflow_dispatch:
+    inputs:
+      # CI SAFETY GATE. Defaults to false so a manual run is validation-only and
+      # cannot create a public GitHub Release or overwrite the live GitHub Pages
+      # site. The v* tag push path is unaffected (see the `if:` on the publish
+      # job): real releases do not set this input and always publish.
+      publish_release:
+        description: 'Publish the GitHub Release + GitHub Pages. Leave false for CI validation runs.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -205,18 +215,89 @@ jobs:
   # Debian bullseye still ships dpkg-sig 0.13.1+nmu4, so a bullseye container
   # gives us a real dpkg-sig for both .deb signing and signature verification
   # via a plain apt install - no mirror, no pinned .deb URL, no source build.
+  #
+  # APT SOURCES ARE PINNED TO A FIXED DEBIAN SNAPSHOT (DEB_SNAPSHOT below).
+  #
+  # Why pinned: Bullseye reached EOL on 2026-08-31. The live
+  # deb.debian.org/debian-security Bullseye index still advertises package
+  # versions whose .deb files now return HTTP 404, so `apt-get install` dies
+  # on perl, perl-modules-5.32, libperl5.32, openssl, ca-certificates,
+  # libnghttp2-14, libcurl3-gnutls, libexpat1, git, git-man and sudo.
+  #
+  # Why a snapshot: snapshot.debian.org is official Debian infrastructure and is
+  # immutable, so one fixed timestamp resolves to the same bytes forever. That
+  # makes this signing environment reproducible and keeps the bootstrap working
+  # months from now instead of depending on a post-EOL archive that is still
+  # being edited. It replaces the now-broken live Bullseye security repository.
+  #
+  # Why 20260831T000000Z: it is the newest capture at which the COMPLETE
+  # Bullseye security pool is still on disk. Captures from 20260910 onward
+  # publish a bullseye-security Release whose package files are already gone.
+  # At this pin the highest version of every package these two steps install
+  # was resolved out of the signed indices and its pool .deb was fetched
+  # successfully:
+  #   dpkg-sig 0.13.1+nmu4, gnupg/gpg/gpgv/dirmngr 2.2.27-2+deb11u3,
+  #   perl/perl-base/perl-modules-5.32/libperl5.32 5.32.1-4+deb11u5,
+  #   ca-certificates 20250419~deb12u1~deb11u1,
+  #   git/git-man 1:2.30.2-1+deb11u5, sudo 1.9.5p2-3+deb11u4,
+  #   file 1:5.39-3+deb11u1, rpm 4.16.1.2+dfsg1-3, createrepo-c 0.17.0-1,
+  #   apt-utils 2.2.4.
+  #
+  # Valid-Until: the bullseye-security Release at this pin carries
+  # "Valid-Until: 06 Sep 2026", which has already passed, so the single
+  # `apt-get update` below is invoked with -o Acquire::Check-Valid-Until=false.
+  # That option is passed on that one command line only and is never written to
+  # any apt config file, so it cannot leak into unrelated apt operations. It
+  # only suppresses a freshness assertion - it does NOT weaken authenticity:
+  # apt still fetches and verifies the GPG-signed Release/InRelease against
+  # /usr/share/keyrings/debian-archive-keyring.gpg. There is no [trusted=yes],
+  # no Acquire::AllowInsecureRepositories and no --allow-unauthenticated.
   sign-and-verify:
     needs: [resolve-version, package-deb, package-rpm, package-flatpak]
     runs-on: ubuntu-latest
     container:
       image: debian:bullseye-slim
+    env:
+      # Fixed, immutable snapshot.debian.org capture. See the comment above.
+      DEB_SNAPSHOT: '20260831T000000Z'
     steps:
       # debian:bullseye-slim is a bare image. git is required by
       # actions/checkout, sudo by the steps below (kept for consistency with the
-      # non-container jobs) and file by scripts/test-apt-install.sh.
+      # non-container jobs), file by scripts/test-apt-install.sh and
+      # ca-certificates by the HTTPS calls the actions make over the network.
       - name: Bootstrap container tooling
         run: |
-          apt-get update
+          set -euo pipefail
+          echo "=== [bootstrap] container identity ==="
+          cat /etc/os-release
+          echo "arch: $(dpkg --print-architecture) ($(uname -m))"
+          echo
+          echo "=== [bootstrap] apt sources shipped in the image (pre-existing) ==="
+          cat /etc/apt/sources.list 2>/dev/null || true
+          ls -1 /etc/apt/sources.list.d/ 2>/dev/null || true
+          echo
+          echo "=== [bootstrap] selected Debian snapshot: ${DEB_SNAPSHOT} ==="
+          # http:// on purpose: this slim image has no CA bundle before the
+          # first update, and snapshot.debian.org serves http without
+          # upgrading to https. Authenticity comes from the GPG-signed
+          # Release/InRelease, which apt verifies below.
+          # The security component really is "updates/main": the signed
+          # bullseye-security Release declares
+          #   Components: updates/main updates/contrib updates/non-free
+          # and apt skips any component the Release does not list.
+          printf '%s\n' \
+            "# Debian Bullseye pinned to immutable snapshot.debian.org capture ${DEB_SNAPSHOT}." \
+            "# Signatures are still verified against debian-archive-keyring.gpg." \
+            "deb http://snapshot.debian.org/archive/debian/${DEB_SNAPSHOT} bullseye main" \
+            "deb http://snapshot.debian.org/archive/debian-security/${DEB_SNAPSHOT} bullseye-security updates/main" \
+            > /etc/apt/sources.list
+          rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources
+          cat /etc/apt/sources.list
+          echo
+          echo "=== [bootstrap] apt-get update against the pinned snapshot only ==="
+          apt-get -o Acquire::Check-Valid-Until=false update
+          echo
+          echo "=== [bootstrap] installing container prerequisites ==="
           apt-get install -y --no-install-recommends git sudo file ca-certificates
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -238,14 +319,41 @@ jobs:
           cat /etc/os-release
           echo "[build] Architecture:"
           dpkg --print-architecture
+          echo "[build] Selected Debian snapshot: ${DEB_SNAPSHOT}"
           echo "[build] Checking apt sources..."
           grep -Rhv '^[[:space:]]*#' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true
           
           echo "[build] Updating apt metadata..."
-          sudo apt-get update
+          # Scoped to this command line: the pinned bullseye-security Release
+          # carries an expired Valid-Until (see the comment on this job). This
+          # suppresses only that freshness check; Release/InRelease signatures
+          # are still verified normally.
+          sudo apt-get -o Acquire::Check-Valid-Until=false update
+
+          echo "[build] Candidate versions from the pinned snapshot:"
+          for pkg in dpkg-sig gnupg perl; do
+            apt-cache policy "$pkg"
+          done
           
           echo "[build] Installing repository tooling..."
           sudo apt-get install -y --no-install-recommends apt-utils createrepo-c rpm gnupg dpkg-sig
+
+          echo "[build] Installed tool versions:"
+          command -v dpkg-sig
+          # dpkg-sig has no --version option (its option table is
+          # sign|list|verify|verify-role|...|help|-v), so ask dpkg instead.
+          dpkg-query -W -f='${Package} ${Version}\n' dpkg-sig
+          # No pipe here: `gpg --version | head -n1` can hand gpg a SIGPIPE
+          # (141) under `set -o pipefail` and kill the step.
+          gpg --version
+          git --version
+          rpm --version
+          createrepo_c --version
+          DPKG_SIG_VERSION="$(dpkg-query -W -f='${Version}' dpkg-sig)"
+          test "$DPKG_SIG_VERSION" = "0.13.1+nmu4" || {
+            echo "::error::expected dpkg-sig 0.13.1+nmu4 from the pinned snapshot, got ${DPKG_SIG_VERSION}"
+            exit 1
+          }
 
           echo "[build] Verifying repository tooling..."
           command -v gpg >/dev/null 2>&1 || {
@@ -345,6 +453,13 @@ jobs:
         run: bash scripts/test-dnf-install.sh "$PWD/build/repository/dnf"
 
   publish:
+    # This job is the ONLY irreversible part of the pipeline: it deploys
+    # GitHub Pages and creates a public, non-draft GitHub Release with assets.
+    #
+    # Tag pushes (the real release path) always publish, exactly as before.
+    # A manual workflow_dispatch run publishes ONLY when publish_release is
+    # explicitly set to true, so a CI validation run cannot publish anything.
+    if: github.event_name != 'workflow_dispatch' || inputs.publish_release == true
     needs: [resolve-version, sign-and-verify, test-fedora-install]
     runs-on: ubuntu-latest
     steps:
