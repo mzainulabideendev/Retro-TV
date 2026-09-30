@@ -319,15 +319,30 @@ jobs:
           # first update, and snapshot.debian.org serves http without
           # upgrading to https. Authenticity comes from the GPG-signed
           # Release/InRelease, which apt verifies below.
-          # The security component really is "updates/main": the signed
-          # bullseye-security Release declares
+          # The security component must be "main", NOT "updates/main".
+          # The signed bullseye-security Release at this pin advertises
           #   Components: updates/main updates/contrib updates/non-free
-          # and apt skips any component the Release does not list.
+          # but its MD5Sum/SHA1/SHA256 sections only carry hashes for index
+          # paths under  main/, contrib/ and non-free/  - there is no
+          # "updates/main/binary-amd64/Packages*" entry. snapshot.debian.org
+          # does serve that path on request, but only by serving the "main"
+          # file, and apt refuses any index the signed Release does not
+          # attest to. So with "updates/main" configured, apt fetched the
+          # security InRelease, found no signed hash for the requested
+          # component, and silently skipped the entire security binary index:
+          # every security package was invisible to the resolver.
+          # The visible symptom was
+          #   perl : Depends: perl-base (= 5.32.1-4+deb11u3)
+          #          but 5.32.1-4+deb11u5 is to be installed
+          # because the image ships perl-base 5.32.1-4+deb11u5 preinstalled
+          # (Essential: yes) while only the bullseye/main u3 perl was visible.
+          # Using "main" restores the security index, which makes the u5
+          # perl/perl-base pair resolvable and matching the installed base.
           printf '%s\n' \
             "# Debian Bullseye pinned to immutable snapshot.debian.org capture ${DEB_SNAPSHOT}." \
             "# Signatures are still verified against debian-archive-keyring.gpg." \
             "deb http://snapshot.debian.org/archive/debian/${DEB_SNAPSHOT} bullseye main" \
-            "deb http://snapshot.debian.org/archive/debian-security/${DEB_SNAPSHOT} bullseye-security updates/main" \
+            "deb http://snapshot.debian.org/archive/debian-security/${DEB_SNAPSHOT} bullseye-security main" \
             > /etc/apt/sources.list
           rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources
           cat /etc/apt/sources.list
@@ -341,39 +356,50 @@ jobs:
           if grep -RhE '^[[:space:]]*deb ' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null \
                | grep -v 'snapshot\.debian\.org/archive/'; then
             echo "!!! UNEXPECTED NON-SNAPSHOT SOURCE ACTIVE !!!"
+            exit 1
           else
             echo "OK: every active source is a pinned snapshot.debian.org capture"
           fi
           echo
-          echo "=== [bootstrap] DIAGNOSTIC: perl / perl-base candidates ==="
-          apt-cache policy perl perl-base || true
-          echo
-          echo "--- madison (every version apt can see, and from where) ---"
-          apt-cache madison perl perl-base || true
-          echo
-          echo "--- full metadata for each version of perl / perl-base ---"
-          for pkg in perl perl-base; do
-            echo "### apt-cache show $pkg"
-            apt-cache show "$pkg" 2>/dev/null \
-              | grep -E '^(Package|Version|Depends|Priority|Essential|Source):' || true
-            echo
+          # Regression guard for the failure documented at the sources.list
+          # above: when the configured security component is not attested by
+          # the signed Release, apt fetches the InRelease, silently skips the
+          # whole security binary index and every security package vanishes
+          # from the resolver. Detect that here instead of several steps later.
+          # Plain glob, no pipeline, so pipefail/SIGPIPE cannot mask the result.
+          echo "=== [bootstrap] verifying the security binary index was actually fetched ==="
+          shopt -s nullglob
+          security_index_found=0
+          for _f in /var/lib/apt/lists/*bullseye-security*binary-amd64_Packages*; do
+            security_index_found=1
+            break
           done
-          echo "--- which prerequisite pulls perl in? ---"
-          for pkg in git sudo file ca-certificates; do
-            printf '%s: ' "$pkg"
-            if apt-cache depends "$pkg" 2>/dev/null | grep -qiE 'perl'; then
-              apt-cache depends "$pkg" 2>/dev/null | grep -iE 'perl' | tr -s ' ' | tr '\n' ' ' || true
-              echo
-            else
-              echo "(no perl dependency)"
-            fi
-          done
-          echo
-          echo "=== [bootstrap] DIAGNOSTIC: dry-run resolution (changes nothing) ==="
-          apt-get -s -o Acquire::Check-Valid-Until=false install -y --no-install-recommends git sudo file ca-certificates 2>&1 | tail -n 45 || true
+          shopt -u nullglob
+          if [[ "$security_index_found" -ne 1 ]]; then
+            echo "ERROR: no bullseye-security binary-amd64 index under /var/lib/apt/lists"
+            echo "       the configured security component is not attested by the signed Release"
+            exit 1
+          fi
+          echo "OK: bullseye-security binary-amd64 index is present"
           echo
           echo "=== [bootstrap] installing container prerequisites ==="
           apt-get install -y --no-install-recommends git sudo file ca-certificates
+          echo
+          echo "=== [bootstrap] verifying the installed perl / perl-base pair ==="
+          dpkg-query -W -f='${Package} ${Version}\n' perl perl-base
+          PERL_VERSION="$(dpkg-query -W -f='${Version}' perl)"
+          PERL_BASE_VERSION="$(dpkg-query -W -f='${Version}' perl-base)"
+          if [[ "$PERL_VERSION" != "$PERL_BASE_VERSION" ]]; then
+            echo "ERROR: perl/perl-base version mismatch (perl=${PERL_VERSION} perl-base=${PERL_BASE_VERSION})"
+            exit 1
+          fi
+          echo "OK: perl and perl-base are a matching pair: ${PERL_VERSION}"
+          echo
+          echo "=== [bootstrap] verifying the remaining container prerequisites ==="
+          git --version
+          sudo --version
+          file --version
+          dpkg-query -W -f='${Package} ${Version}\n' ca-certificates
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
