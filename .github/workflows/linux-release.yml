@@ -497,9 +497,13 @@ jobs:
           GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
+          unset GPG_TTY
+          GPG_BIN="$(command -v gpg)"
+          test -x "$GPG_BIN"
+          echo "[build] RPM signing with $GPG_BIN"
           shopt -s nullglob
           for f in build/packages/retro-tv-*.rpm; do
-            rpmsign --define "%_gpg_name $GPG_KEY_ID" --define "%_gpg_passphrase $GPG_PASSPHRASE" --addsign "$f"
+            rpmsign --define "__gpg $GPG_BIN" --define "%_gpg_name $GPG_KEY_ID" --define "%_gpg_passphrase $GPG_PASSPHRASE" --addsign "$f"
           done
       - name: Generate SHA256SUMS
         run: |
