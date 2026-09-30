@@ -198,10 +198,26 @@ jobs:
   # Signs everything, keeps nothing unpublished: repository generation, GPG
   # signing, artifact verification and the full Debian install test happen
   # here BEFORE any publication step runs.
+  #
+  # This job runs inside a Debian container on purpose. dpkg-sig was dropped from
+  # Ubuntu after 22.04 (jammy) and is also absent from Debian bookworm and
+  # trixie, so no ubuntu-24.04/latest or bookworm/trixie image can install it.
+  # Debian bullseye still ships dpkg-sig 0.13.1+nmu4, so a bullseye container
+  # gives us a real dpkg-sig for both .deb signing and signature verification
+  # via a plain apt install - no mirror, no pinned .deb URL, no source build.
   sign-and-verify:
     needs: [resolve-version, package-deb, package-rpm, package-flatpak]
     runs-on: ubuntu-latest
+    container:
+      image: debian:bullseye-slim
     steps:
+      # debian:bullseye-slim is a bare image. git is required by
+      # actions/checkout, sudo by the steps below (kept for consistency with the
+      # non-container jobs) and file by scripts/test-apt-install.sh.
+      - name: Bootstrap container tooling
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git sudo file ca-certificates
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
@@ -218,7 +234,7 @@ jobs:
       - name: Install repository tooling
         run: |
           set -euo pipefail
-          echo "[build] Ubuntu release:"
+          echo "[build] Container release:"
           cat /etc/os-release
           echo "[build] Architecture:"
           dpkg --print-architecture
@@ -228,40 +244,9 @@ jobs:
           echo "[build] Updating apt metadata..."
           sudo apt-get update
           
-          echo "[build] Checking dpkg-sig availability in Ubuntu 24.04 repos..."
-          if apt-cache policy dpkg-sig 2>/dev/null | grep -q "Candidate: (none)"; then
-            echo "[build] dpkg-sig not in Ubuntu 24.04 repos, building from Debian source..."
-            # Install build dependencies
-            sudo apt-get install -y --no-install-recommends build-essential debhelper devscripts
-            
-            echo "[build] Downloading dpkg-sig source from Debian archive..."
-            cd /tmp
-            wget -q --timeout=60 --tries=3 \
-              "http://deb.debian.org/debian/pool/main/d/dpkg-sig/dpkg-sig_0.13.1+git20210118.orig.tar.xz" \
-              -O dpkg-sig_0.13.1+git20210118.orig.tar.xz || {
-                echo "ERROR: Failed to download dpkg-sig source" >&2
-                exit 1
-              }
-            
-            wget -q --timeout=30 --tries=3 \
-              "https://deb.debian.org/debian/pool/main/d/dpkg-sig/dpkg-sig_0.13.1+git20210118-1.dsc" \
-              -O dpkg-sig.dsc || {
-                echo "ERROR: Failed to download dpkg-sig dsc" >&2
-                exit 1
-              }
-            
-            wget -q --timeout=30 --tries=3 \
-              "https://deb.debian.org/debian/pool/main/d/dpkg-sig/dpkg-sig_0.13.1+git20210118-1.debian.tar.xz" \
-              -O dpkg-sig_0.13.1+git20210118-1.debian.tar.xz || {
-                echo "ERROR: Failed to download dpkg-sig debian.tar.xz" >&2
-                exit 1
-              }
-            
-            dpkg-source -x dpkg-sig.dsc
-            cd dpkg-sig-*/
-            dpkg-buildpackage -us -uc -b
-            sudo dpkg -i ../dpkg-sig_*.deb
-          
+          echo "[build] Installing repository tooling..."
+          sudo apt-get install -y --no-install-recommends apt-utils createrepo-c rpm gnupg dpkg-sig
+
           echo "[build] Verifying repository tooling..."
           command -v gpg >/dev/null 2>&1 || {
             echo "::error::gpg is missing"
