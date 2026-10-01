@@ -44,7 +44,9 @@ dnf install -y retro-tv || { echo "test-dnf-install: dnf install FAILED" >&2; ex
 
 echo "[3/6] verify executable + desktop entry"
 test -x /usr/bin/retro_tv || { echo "test-dnf-install: /usr/bin/retro_tv missing" >&2; exit 1; }
-test -x /usr/lib/retro-tv/retro_tv || { echo "test-dnf-install: /usr/lib/retro-tv/retro_tv missing" >&2; exit 1; }
+RPM_LIBDIR="$(rpm --eval '%{_libdir}')"
+test -x "$RPM_LIBDIR/retro-tv/retro_tv" \
+    || { echo "test-dnf-install: $RPM_LIBDIR/retro-tv/retro_tv missing" >&2; exit 1; }
 test -f /usr/share/applications/com.retrotv.retro_tv.desktop \
     || { echo "test-dnf-install: desktop entry missing" >&2; exit 1; }
 
