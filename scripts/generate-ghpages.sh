@@ -49,6 +49,19 @@ printf '[retro-tv]\nname=Retro TV\nbaseurl=https://mzainulabideendev.github.io/R
 sudo dnf install retro-tv
 </pre>
 
+<h2>Arch Linux (build from source)</h2>
+<p>The Arch PKGBUILD builds the tagged source and needs Flutter 3.47.2 on your PATH.</p>
+<pre>
+sudo pacman -S --needed base-devel git gtk3 mpv gcc-libs clang cmake ninja patchelf
+mkdir -p "$HOME/.local/opt"
+curl -fL https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.47.2-stable.tar.xz -o /tmp/flutter-linux.tar.xz
+tar -xJf /tmp/flutter-linux.tar.xz -C "$HOME/.local/opt"
+export PATH="$HOME/.local/opt/flutter/bin:$PATH"
+mkdir -p "$HOME/src/retro-tv" &amp;&amp; cd "$HOME/src/retro-tv"
+curl -fsSL https://raw.githubusercontent.com/mzainulabideendev/Retro-TV/v1.2.3/packaging/arch/PKGBUILD -o PKGBUILD
+makepkg -si
+</pre>
+
 <h2>Direct downloads</h2>
 <ul>
 HTML

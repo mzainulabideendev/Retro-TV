@@ -6,7 +6,7 @@ param(
   [string]$PackageName = $env:MSIX_PACKAGE_NAME,
   [string]$Publisher = $env:MSIX_PUBLISHER,
   [string]$DisplayName = "Retro TV",
-  [string]$PublisherDisplayName = "Retro TV",
+  [string]$PublisherDisplayName = "M Zain Ul Abideen",
   [string]$Description = "Retro TV - a retro-styled live TV streaming experience.",
   [string]$BackgroundColor = "#20202A",
   [string]$Architecture = "x64",
@@ -74,16 +74,17 @@ function ConvertTo-MsixVersion {
     $numbers += $number
   }
   if ($numbers[0] -eq 0) { throw "MSIX major version cannot be 0" }
+  if ($numbers[3] -ne 0) { throw "Microsoft Store requires the MSIX revision component to be 0, got '$VersionString'" }
   return ($numbers -join ".")
 }
 
 Push-Location $repoRoot
 try {
-  if (-not $PackageName) { $PackageName = "RetroTV" }
-  if (-not $Publisher) { $Publisher = "CN=RetroTV" }
+  if (-not $PackageName) { $PackageName = "MZainUlAbideen.RetroTV" }
+  if (-not $Publisher) { $Publisher = "CN=1C68AC37-6A07-4F31-846A-C808E6F3934A" }
 
   $pubspecVersion = Get-PubspecVersion
-  if (-not $Version) { $Version = "$($pubspecVersion.Name).$($pubspecVersion.Code)" }
+  if (-not $Version) { $Version = "$($pubspecVersion.Name).0" }
   $msixVersion = ConvertTo-MsixVersion $Version
 
   if (-not $ReleaseDir) { $ReleaseDir = "build/windows/$Architecture/runner/Release" }

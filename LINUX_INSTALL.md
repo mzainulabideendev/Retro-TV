@@ -43,7 +43,23 @@ echo -e '[retro-tv]\nname=Retro TV\nbaseurl=https://mzainulabideendev.github.io/
 sudo dnf install retro-tv
 ```
 
-## Option C – direct download
+## Option C – Arch Linux (build from source)
+
+The Arch PKGBUILD compiles the tagged source and requires Flutter 3.47.2 on your
+`PATH`:
+
+```bash
+sudo pacman -S --needed base-devel git gtk3 mpv gcc-libs clang cmake ninja patchelf
+mkdir -p "$HOME/.local/opt"
+curl -fL https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.47.2-stable.tar.xz -o /tmp/flutter-linux.tar.xz
+tar -xJf /tmp/flutter-linux.tar.xz -C "$HOME/.local/opt"
+export PATH="$HOME/.local/opt/flutter/bin:$PATH"
+mkdir -p "$HOME/src/retro-tv" && cd "$HOME/src/retro-tv"
+curl -fsSL https://raw.githubusercontent.com/mzainulabideendev/Retro-TV/v1.2.3/packaging/arch/PKGBUILD -o PKGBUILD
+makepkg -si
+```
+
+## Option D – direct download
 
 - `.deb`: https://mzainulabideendev.github.io/Retro-TV/apt/pool/main/r/retro-tv/retro-tv_1.2.3-7_amd64.deb
 - `.rpm`: https://mzainulabideendev.github.io/Retro-TV/dnf/retro-tv-1.2.3-7.x86_64.rpm
@@ -59,7 +75,7 @@ sudo apt install ./retro-tv_1.2.3-7_amd64.deb
 sudo dnf install ./retro-tv-1.2.3-7.x86_64.rpm
 ```
 
-## Option D – Flatpak
+## Option E – Flatpak
 
 After downloading `RetroTV-1.2.3.7.flatpak` from the GitHub release:
 
