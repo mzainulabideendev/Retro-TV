@@ -15,6 +15,11 @@ on:
         required: false
         type: boolean
         default: false
+      publish_pages_only:
+        description: 'Deploy GitHub Pages without creating a GitHub Release (docs/site-only updates).'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -598,8 +603,8 @@ jobs:
     #
     # Tag pushes (the real release path) always publish, exactly as before.
     # A manual workflow_dispatch run publishes ONLY when publish_release is
-    # explicitly set to true, so a CI validation run cannot publish anything.
-    if: github.event_name != 'workflow_dispatch' || inputs.publish_release == true
+    # enabled. publish_pages_only deploys Pages without touching GitHub Releases.
+    if: (github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && (inputs.publish_release == true || inputs.publish_pages_only == true))
     needs: [resolve-version, sign-and-verify, test-apt-install, test-fedora-install]
     runs-on: ubuntu-latest
     steps:
@@ -612,6 +617,11 @@ jobs:
         with:
           name: packages
           path: build/packages
+      - name: Reject conflicting publish modes
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true && inputs.publish_pages_only == true
+        run: |
+          echo "::error::Choose either publish_release or publish_pages_only, not both."
+          exit 1
       - name: Create version tag for manual publish
         if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true && github.ref_type != 'tag'
         env:
@@ -634,7 +644,7 @@ jobs:
             echo "[release] created $RELEASE_TAG at $GITHUB_SHA"
           fi
       - name: Create GitHub Release with assets
-        if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true)
+        if: (github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.resolve-version.outputs.name) }}
