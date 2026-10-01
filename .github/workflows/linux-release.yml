@@ -8,8 +8,8 @@ on:
     inputs:
       # CI SAFETY GATE. Defaults to false so a manual run is validation-only and
       # cannot create a public GitHub Release or overwrite the live GitHub Pages
-      # site. The v* tag push path is unaffected (see the `if:` on the publish
-      # job): real releases do not set this input and always publish.
+      # site. When enabled on a branch, the workflow creates a new version tag
+      # before publishing. Tag pushes always publish as usual.
       publish_release:
         description: 'Publish the GitHub Release + GitHub Pages. Leave false for CI validation runs.'
         required: false
@@ -572,7 +572,7 @@ jobs:
 
   publish:
     # This job is the ONLY irreversible part of the pipeline: it deploys
-    # GitHub Pages and, for tag refs, creates a public GitHub Release.
+    # GitHub Pages and creates a public GitHub Release with package assets.
     #
     # Tag pushes (the real release path) always publish, exactly as before.
     # A manual workflow_dispatch run publishes ONLY when publish_release is
@@ -590,23 +590,24 @@ jobs:
         with:
           name: packages
           path: build/packages
-      - name: Assemble GitHub Pages site
-        run: bash scripts/generate-ghpages.sh
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: build/gh-pages
-      - name: Publish Pages
-        uses: actions/deploy-pages@v4
-      - name: Explain skipped GitHub Release for branch dispatch
+      - name: Create version tag for manual publish
         if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true && github.ref_type != 'tag'
-        run: echo "::warning::GitHub Pages was deployed, but no GitHub Release was created because this manual run is not on a tag. Run the workflow from a release tag to create the release."
+        env:
+          RELEASE_TAG: v${{ needs.resolve-version.outputs.name }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $RELEASE_TAG already exists; refusing to overwrite an existing release. Update pubspec.yaml before publishing another release."
+            exit 1
+          fi
+          git tag "$RELEASE_TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$RELEASE_TAG"
+          echo "[release] created $RELEASE_TAG at $GITHUB_SHA"
       - name: Create GitHub Release with assets
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true)
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.resolve-version.outputs.name) }}
+          target_commitish: ${{ github.sha }}
           name: Retro TV ${{ needs.resolve-version.outputs.full }}
           body: >
             Linux release ${{ needs.resolve-version.outputs.full }} (amd64).
@@ -618,3 +619,13 @@ jobs:
             build/packages/SHA256SUMS
           draft: false
           prerelease: false
+      - name: Assemble GitHub Pages site
+        run: bash scripts/generate-ghpages.sh
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/gh-pages
+      - name: Publish Pages
+        uses: actions/deploy-pages@v4
