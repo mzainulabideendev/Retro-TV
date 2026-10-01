@@ -525,12 +525,6 @@ jobs:
         run: bash scripts/generate-dnf-repository.sh
       - name: Verify release artifacts
         run: bash scripts/verify-release.sh
-      - name: Debian/Ubuntu end-to-end install test
-        env:
-          NV: ${{ needs.resolve-version.outputs.name }}
-          NC: ${{ needs.resolve-version.outputs.code }}
-        run: |
-          sudo bash scripts/test-apt-install.sh "$PWD/build/repository/apt" "$NV" "$NC"
       - uses: actions/upload-artifact@v4
         with:
           name: repository
@@ -541,6 +535,25 @@ jobs:
           name: packages
           path: build/packages
           if-no-files-found: error
+
+  # The .deb is built on Ubuntu 24.04 and depends on its libmpv2 ABI. Bullseye
+  # provides libmpv1 instead, so exercise APT installation on the target Ubuntu.
+  test-apt-install:
+    needs: [resolve-version, sign-and-verify]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: repository
+          path: build/repository
+      - name: Install test utility
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq file
+      - name: Ubuntu end-to-end install test
+        env:
+          NV: ${{ needs.resolve-version.outputs.name }}
+          NC: ${{ needs.resolve-version.outputs.code }}
+        run: sudo bash scripts/test-apt-install.sh "$PWD/build/repository/apt" "$NV" "$NC"
 
   # Fedora/RHEL install test in a real fedora container. Runs AFTER signing so
   # it validates the exact signed repository that will be published.
@@ -565,7 +578,7 @@ jobs:
     # A manual workflow_dispatch run publishes ONLY when publish_release is
     # explicitly set to true, so a CI validation run cannot publish anything.
     if: github.event_name != 'workflow_dispatch' || inputs.publish_release == true
-    needs: [resolve-version, sign-and-verify, test-fedora-install]
+    needs: [resolve-version, sign-and-verify, test-apt-install, test-fedora-install]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
