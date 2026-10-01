@@ -572,7 +572,7 @@ jobs:
 
   publish:
     # This job is the ONLY irreversible part of the pipeline: it deploys
-    # GitHub Pages and creates a public, non-draft GitHub Release with assets.
+    # GitHub Pages and, for tag refs, creates a public GitHub Release.
     #
     # Tag pushes (the real release path) always publish, exactly as before.
     # A manual workflow_dispatch run publishes ONLY when publish_release is
@@ -600,7 +600,11 @@ jobs:
           path: build/gh-pages
       - name: Publish Pages
         uses: actions/deploy-pages@v4
+      - name: Explain skipped GitHub Release for branch dispatch
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true && github.ref_type != 'tag'
+        run: echo "::warning::GitHub Pages was deployed, but no GitHub Release was created because this manual run is not on a tag. Run the workflow from a release tag to create the release."
       - name: Create GitHub Release with assets
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           name: Retro TV ${{ needs.resolve-version.outputs.full }}
