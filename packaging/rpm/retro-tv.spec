@@ -6,8 +6,8 @@
 # CI Linux runner (build/linux/x64/release/bundle, tarballed with top dir
 # renamed to "bundle"). No flutter toolchain is needed on the build host.
 Name:           retro-tv
-Version:        1.2.2
-Release:        6%{?dist}
+Version:        1.2.3
+Release:        7%{?dist}
 Summary:        Retro-styled IPTV / YouTube streaming TV app
 License:        MIT
 URL:            https://mzainulabideendev.github.io/Retro-TV/
@@ -54,7 +54,7 @@ install -m644 %{_sourcedir}/LICENSE %{buildroot}%{_datadir}/licenses/retro-tv/LI
 %license %{_datadir}/licenses/retro-tv/LICENSE
 
 %changelog
-* Thu Oct 01 2026 mzainulabideendev <mzainulabideendev@users.noreply.github.com> - 1.2.2-6
-- Release 1.2.2
+* Thu Oct 01 2026 mzainulabideendev <mzainulabideendev@users.noreply.github.com> - 1.2.3-7
+- Release 1.2.3
 * Tue Sep 29 2026 mzainulabideendev <mzainulabideendev@users.noreply.github.com> - 1.2.1-5
 - Initial Linux packaging (amd64).

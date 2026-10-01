@@ -10,7 +10,7 @@
 # 'libmpv.so.2' resolves inside the strict confinement.
 name: retro-tv
 base: core22
-version: '1.2.2'
+version: '1.2.3'
 summary: Retro-styled IPTV / YouTube streaming TV app
 description: |
   Retro TV renders a nostalgic CRT television look and plays YouTube live
