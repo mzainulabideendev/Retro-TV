@@ -214,10 +214,10 @@ jobs:
           # The source archive comes from the checkout job because this
           # container workspace does not retain Git metadata.
           test -s "$GITHUB_WORKSPACE/build/retro-tv-ci-source.tar.gz"
-          chown build:build "$GITHUB_WORKSPACE/retro-tv-ci-source.tar.gz"
+          chown build:build "$GITHUB_WORKSPACE/build/retro-tv-ci-source.tar.gz"
       - name: Build PKGBUILD (non-root)
         run: |
-          sudo -u build -H bash -c "export PATH=/opt/flutter-sdk/bin:\$PATH; export PUB_CACHE='$GITHUB_WORKSPACE/.pub-cache'; export RETRO_TV_SOURCE_ARCHIVE='$GITHUB_WORKSPACE/retro-tv-ci-source.tar.gz'; cd '$GITHUB_WORKSPACE' && bash scripts/build-arch.sh"
+          sudo -u build -H bash -c "export PATH=/opt/flutter-sdk/bin:\$PATH; export PUB_CACHE='$GITHUB_WORKSPACE/.pub-cache'; export RETRO_TV_SOURCE_ARCHIVE='$GITHUB_WORKSPACE/build/retro-tv-ci-source.tar.gz'; cd '$GITHUB_WORKSPACE' && bash scripts/build-arch.sh"
       - name: Install and verify executable (pacman)
         run: |
           pacman -U --noconfirm build/packages/retro-tv-*.pkg.tar.zst
