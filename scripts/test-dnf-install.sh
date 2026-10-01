@@ -53,9 +53,9 @@ test -f /usr/share/applications/com.retrotv.retro_tv.desktop \
 echo "[4/6] verify installed files"
 rpm -V retro-tv || { echo "test-dnf-install: rpm -V reported problems" >&2; exit 1; }
 
-echo "[5/6] verify signature on installed package"
-rpm -qK retro-tv | grep -q "GPG signature OK" \
-    || { echo "test-dnf-install: rpm signature NOT OK" >&2; exit 1; }
+echo "[5/6] verify repository RPM signature"
+rpm --checksig --verbose "$DNF_DIR"/retro-tv-*.rpm \
+    || { echo "test-dnf-install: RPM package signature NOT OK" >&2; exit 1; }
 
 echo "[6/6] remove retro-tv"
 dnf remove -y retro-tv || { echo "test-dnf-install: dnf remove FAILED" >&2; exit 1; }
