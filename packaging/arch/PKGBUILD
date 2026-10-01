@@ -20,6 +20,12 @@ depends=('gtk3' 'mpv' 'gcc-libs')
 makedepends=('clang' 'cmake' 'ninja' 'base-devel' 'git' 'patchelf')
 options=('!lto')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/mzainulabideendev/Retro-TV/archive/refs/tags/v$pkgver.tar.gz")
+# CI supplies an archive of the checked-out commit because the release tag is
+# created only after all package jobs pass. Local/AUR builds use the tagged URL.
+if [[ -n "${RETRO_TV_SOURCE_ARCHIVE:-}" ]]; then
+    [[ -f "$RETRO_TV_SOURCE_ARCHIVE" ]] || { echo "missing CI source archive: $RETRO_TV_SOURCE_ARCHIVE" >&2; exit 1; }
+    source=("$pkgname-$pkgver.tar.gz::file://$RETRO_TV_SOURCE_ARCHIVE")
+fi
 # sha256 for this source cannot be computed yet because the v$pkgver release
 # tag does not exist until the first tagged release (the archive is produced by
 # GitHub on the tag). SKIP is a valid PKGBUILD token meaning "do not verify";

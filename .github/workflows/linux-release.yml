@@ -160,7 +160,7 @@ jobs:
   # PKGBUILD published to the AUR), then installs the built package and checks
   # the executable. Non-blocking: failures do not hold back the main release.
   package-arch:
-    needs: test-build-linux
+    needs: [resolve-version, test-build-linux]
     runs-on: ubuntu-24.04
     container: archlinux:latest
     continue-on-error: true
@@ -181,6 +181,8 @@ jobs:
           git config --global --add safe.directory '*'
           /opt/flutter-sdk/bin/flutter --version
       - name: Prepare build user and verify Flutter access
+        env:
+          NV: ${{ needs.resolve-version.outputs.name }}
         run: |
           useradd -m build
           chown -R build:build "$GITHUB_WORKSPACE"
@@ -193,9 +195,13 @@ jobs:
           sudo -u build -H git -C /opt/flutter-sdk rev-parse --is-inside-work-tree
           # Verify Flutter runs as the build user
           sudo -u build -H /opt/flutter-sdk/bin/flutter --version
+          # The release tag is created after packaging, so use the checked-out
+          # commit as the PKGBUILD source for this CI-only build.
+          git archive --format=tar.gz --prefix="Retro-TV-${NV}/" HEAD > "$GITHUB_WORKSPACE/retro-tv-ci-source.tar.gz"
+          chown build:build "$GITHUB_WORKSPACE/retro-tv-ci-source.tar.gz"
       - name: Build PKGBUILD (non-root)
         run: |
-          sudo -u build -H bash -c "export PATH=/opt/flutter-sdk/bin:\$PATH; export PUB_CACHE='$GITHUB_WORKSPACE/.pub-cache'; cd '$GITHUB_WORKSPACE' && bash scripts/build-arch.sh"
+          sudo -u build -H bash -c "export PATH=/opt/flutter-sdk/bin:\$PATH; export PUB_CACHE='$GITHUB_WORKSPACE/.pub-cache'; export RETRO_TV_SOURCE_ARCHIVE='$GITHUB_WORKSPACE/retro-tv-ci-source.tar.gz'; cd '$GITHUB_WORKSPACE' && bash scripts/build-arch.sh"
       - name: Install and verify executable (pacman)
         run: |
           pacman -U --noconfirm build/packages/retro-tv-*.pkg.tar.zst
