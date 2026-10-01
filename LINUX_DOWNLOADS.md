@@ -9,8 +9,8 @@ Download index: https://mzainulabideendev.github.io/Retro-TV/
 |---|---|
 | APT repo | https://mzainulabideendev.github.io/Retro-TV/apt/ |
 | DNF repo | https://mzainulabideendev.github.io/Retro-TV/dnf/ |
-| Current .deb | https://mzainulabideendev.github.io/Retro-TV/apt/pool/main/r/retro-tv/retro-tv_1.2.1-5_amd64.deb |
-| Current .rpm | https://mzainulabideendev.github.io/Retro-TV/dnf/retro-tv-1.2.1-5.x86_64.rpm |
+| Current .deb | https://mzainulabideendev.github.io/Retro-TV/apt/pool/main/r/retro-tv/retro-tv_1.2.2-6_amd64.deb |
+| Current .rpm | https://mzainulabideendev.github.io/Retro-TV/dnf/retro-tv-1.2.2-6.x86_64.rpm |
 | Checksums | https://mzainulabideendev.github.io/Retro-TV/SHA256SUMS |
 | Release assets (incl. .flatpak) | https://github.com/mzainulabideendev/Retro-TV/releases |
 
@@ -26,11 +26,11 @@ Download index: https://mzainulabideendev.github.io/Retro-TV/
 
 ## Naming / versioning
 
-pubspec `version: 1.2.1+5` maps to:
-- .deb: `retro-tv_1.2.1-5_amd64.deb`
-- .rpm: `retro-tv-1.2.1-5.x86_64.rpm`
-- pkg.tar.zst (AUR build): `retro-tv-1.2.1-5-x86_64.pkg.tar.zst`
-- Flatpak bundle: `RetroTV-1.2.1.5.flatpak`
+pubspec `version: 1.2.2+6` maps to:
+- .deb: `retro-tv_1.2.2-6_amd64.deb`
+- .rpm: `retro-tv-1.2.2-6.x86_64.rpm`
+- pkg.tar.zst (AUR build): `retro-tv-1.2.2-6-x86_64.pkg.tar.zst`
+- Flatpak bundle: `RetroTV-1.2.2.6.flatpak`
 
 ## Signature policy
 

@@ -44,5 +44,5 @@ modules:
       - cp -r usr/* /app/
     sources:
       - type: file
-        path: ../build/packages/retro-tv_1.2.1-5_amd64.deb
+        path: ../build/packages/retro-tv_1.2.2-6_amd64.deb
         dest-filename: retro-tv.deb

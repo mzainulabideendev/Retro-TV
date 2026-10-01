@@ -1,6 +1,6 @@
 # Installing Retro TV on Linux (amd64)
 
-Current release: **1.2.1** (build 5; tag `v1.2.1`). Requires an x86_64
+Current release: **1.2.2** (build 6; tag `v1.2.2`). Requires an x86_64
 machine with a display (X11 or Wayland). Releases are signed with GPG key
 `570D2F04129940F1A8561E4C35111918F6D14EA9` (`Retro TV <mzainulabideen.dev@gmail.com>`).
 
@@ -45,8 +45,8 @@ sudo dnf install retro-tv
 
 ## Option C – direct download
 
-- `.deb`: https://mzainulabideendev.github.io/Retro-TV/apt/pool/main/r/retro-tv/retro-tv_1.2.1-5_amd64.deb
-- `.rpm`: https://mzainulabideendev.github.io/Retro-TV/dnf/retro-tv-1.2.1-5.x86_64.rpm
+- `.deb`: https://mzainulabideendev.github.io/Retro-TV/apt/pool/main/r/retro-tv/retro-tv_1.2.2-6_amd64.deb
+- `.rpm`: https://mzainulabideendev.github.io/Retro-TV/dnf/retro-tv-1.2.2-6.x86_64.rpm
 - Checksums: https://mzainulabideendev.github.io/Retro-TV/SHA256SUMS
 - GitHub Release assets (including the `.flatpak`): https://github.com/mzainulabideendev/Retro-TV/releases
 
@@ -54,18 +54,18 @@ Install a downloaded deb/rpm directly:
 
 ```bash
 # Debian/Ubuntu
-sudo apt install ./retro-tv_1.2.1-5_amd64.deb
+sudo apt install ./retro-tv_1.2.2-6_amd64.deb
 # Fedora
-sudo dnf install ./retro-tv-1.2.1-5.x86_64.rpm
+sudo dnf install ./retro-tv-1.2.2-6.x86_64.rpm
 ```
 
 ## Option D – Flatpak
 
-After downloading `RetroTV-1.2.1.5.flatpak` from the GitHub release:
+After downloading `RetroTV-1.2.2.6.flatpak` from the GitHub release:
 
 ```bash
 flatpak install --user org.kde.Platform//6.10
-flatpak install --user --noninteractive ./RetroTV-1.2.1.5.flatpak
+flatpak install --user --noninteractive ./RetroTV-1.2.2.6.flatpak
 flatpak run com.retrotv.retro_tv
 ```
 

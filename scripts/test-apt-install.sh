@@ -12,7 +12,7 @@
 #   8. remove package
 #
 # Usage: test-apt-install.sh <apt-repo-dir> <expected-version> [<expected-version-code>]
-# Example: test-apt-install.sh build/repository/apt 1.2.1 5
+# Example: test-apt-install.sh build/repository/apt 1.2.2 6
 set -euo pipefail
 
 [ "$(id -u)" -eq 0 ] || { echo "test-apt-install: must run as root" >&2; exit 1; }

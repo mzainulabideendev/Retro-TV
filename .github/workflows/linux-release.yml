@@ -595,13 +595,22 @@ jobs:
         env:
           RELEASE_TAG: v${{ needs.resolve-version.outputs.name }}
         run: |
-          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "::error::Tag $RELEASE_TAG already exists; refusing to overwrite an existing release. Update pubspec.yaml before publishing another release."
+          if ! existing_tag_refs="$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}")"; then
+            echo "::error::Could not query origin for tag $RELEASE_TAG; check GitHub connectivity and permissions."
             exit 1
           fi
-          git tag "$RELEASE_TAG" "$GITHUB_SHA"
-          git push origin "refs/tags/$RELEASE_TAG"
-          echo "[release] created $RELEASE_TAG at $GITHUB_SHA"
+          existing_tag_sha="$(printf '%s\n' "$existing_tag_refs" | awk -v tag_ref="refs/tags/$RELEASE_TAG" '$2 == tag_ref "^{}" { peeled = $1 } $2 == tag_ref { direct = $1 } END { print peeled ? peeled : direct }')"
+          if [[ -n "$existing_tag_sha" ]]; then
+            if [[ "$existing_tag_sha" != "$GITHUB_SHA" ]]; then
+              echo "::error::Tag $RELEASE_TAG already points to $existing_tag_sha, not $GITHUB_SHA. Bump pubspec.yaml to a new release version before publishing these artifacts."
+              exit 1
+            fi
+            echo "[release] reusing $RELEASE_TAG at $GITHUB_SHA"
+          else
+            git tag "$RELEASE_TAG" "$GITHUB_SHA"
+            git push origin "refs/tags/$RELEASE_TAG"
+            echo "[release] created $RELEASE_TAG at $GITHUB_SHA"
+          fi
       - name: Create GitHub Release with assets
         if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true)
         uses: softprops/action-gh-release@v2

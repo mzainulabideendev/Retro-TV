@@ -8,8 +8,8 @@
 # package-arch job.
 
 pkgname=retro-tv
-pkgver=1.2.1
-pkgrel=5
+pkgver=1.2.2
+pkgrel=6
 pkgdesc="Retro-styled IPTV / YouTube streaming TV app (native Linux build)"
 arch=('x86_64')
 url="https://mzainulabideendev.github.io/Retro-TV/"
