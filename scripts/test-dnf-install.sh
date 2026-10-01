@@ -31,7 +31,10 @@ cleanup() { rm -f /etc/yum.repos.d/retro-tv-test.repo; }
 trap cleanup EXIT
 
 echo "[1/6] resolve metadata"
-dnf makecache || { echo "test-dnf-install: dnf makecache FAILED" >&2; exit 1; }
+# DNF keeps repository-metadata key trust separate from RPM's package key DB.
+# Accept the configured gpgkey non-interactively while keeping both signature
+# checks enabled in the repository configuration above.
+dnf makecache -y || { echo "test-dnf-install: dnf makecache FAILED" >&2; exit 1; }
 # `dnf list` is part of core dnf; `repoquery` needs dnf-plugins-core which is
 # not present in the minimal CI image.
 dnf list --available retro-tv || { echo "test-dnf-install: package not found in repo" >&2; exit 1; }
