@@ -58,5 +58,8 @@ install -m644 "$BUILD_DIR/release.gpg" "$APT_DIR/retro-tv-archive-keyring.gpg"
 # repository is public and APT's sandboxed _apt user must be able to traverse
 # directories and read its indexes and packages.
 chmod -R a+rX "$APT_DIR"
+# The repository parent directories were also created under that umask. Grant
+# only traversal, not directory-listing access, on the path leading to the repo.
+chmod o+x "$BUILD_DIR" "$REPOSITORY_DIR"
 
 log "apt repository ready at $APT_DIR (dists/stable + pool, InRelease signed)"
