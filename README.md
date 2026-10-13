@@ -219,6 +219,35 @@ flutter build linux --release
 > Signing / key-management policy is described in [`keys/README.md`](keys/README.md)
 > and [`SECURITY.md`](SECURITY.md).
 
+### Apple release builds
+
+The Linux release workflow also builds Apple artifacts when publishing a release:
+an App Store-signed iOS IPA and signed, notarized macOS ZIPs for Apple Silicon
+and Intel. Apple builds run on GitHub-hosted macOS runners; they cannot be built
+locally on Windows.
+
+Before publishing, configure these repository Actions secrets:
+
+| Secret | Value |
+| --- | --- |
+| `IOS_CERTIFICATE_P12_BASE64` | Base64-encoded Apple Distribution `.p12` certificate |
+| `IOS_CERTIFICATE_PASSWORD` | Password used to export the iOS `.p12` |
+| `IOS_PROVISIONING_PROFILE_BASE64` | Base64-encoded App Store provisioning profile for `com.retrotv.retroTv` |
+| `IOS_TEAM_ID` | Apple Developer Team ID |
+| `MACOS_CERTIFICATE_P12_BASE64` | Base64-encoded Developer ID Application `.p12` certificate |
+| `MACOS_CERTIFICATE_PASSWORD` | Password used to export the macOS `.p12` |
+| `APPLE_NOTARY_API_KEY_BASE64` | Base64-encoded App Store Connect API `.p8` key |
+| `APPLE_NOTARY_KEY_ID` | App Store Connect API key ID |
+| `APPLE_NOTARY_ISSUER_ID` | App Store Connect issuer ID |
+
+Create the certificates and provisioning profile in the Apple Developer account
+and export the `.p12`/profile files as base64 without line breaks before saving
+them as secrets. The macOS API key must have permission to submit notarization
+requests. A tag release or a manual run with **Publish GitHub Release** enabled
+will attach the iOS IPA and both notarized macOS ZIPs to the GitHub release.
+The IPA is ready for App Store Connect upload; Apple App Store review and
+publication remain a separate step.
+
 ## 🖥️ Supported Platforms
 
 The app targets **Android, iOS, Web, macOS, Windows, and Linux**. The produce folder structure is already scaffolded for every platform (`android/`, `ios/`, `web/`, `windows/`, `macos/`, `linux/`).
