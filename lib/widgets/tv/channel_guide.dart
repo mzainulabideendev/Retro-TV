@@ -38,8 +38,9 @@ class _ChannelGuideState extends State<ChannelGuide> {
   }
 
   Future<void> _loadPrograms() async {
-    final results =
-        await ContentService.getCurrentProgramsForChannels(widget.channels);
+    final results = await ContentService.getCurrentProgramsForChannels(
+      widget.channels,
+    );
     if (!mounted) return;
     setState(() {
       _nowPlaying.addAll(results);
@@ -91,61 +92,62 @@ class _ChannelGuideState extends State<ChannelGuide> {
                 final subtitle = !_programsLoaded
                     ? 'NOW: Loading...'
                     : program != null
-                        ? 'NOW: ${program.title}'
-                        : 'NOW: Off-air';
+                    ? 'NOW: ${program.title}'
+                    : 'NOW: Off-air';
+                final logoUrl = c.logoUrl?.trim();
                 return ListTile(
                   dense: true,
-                  leading: Row(
-                    mainAxisSize: MainAxisSize.min,
+                  leading: SizedBox(
+                    width: 44,
+                    height: 38,
+                    child: logoUrl == null || logoUrl.isEmpty
+                        ? const Icon(Icons.tv, color: Colors.white54)
+                        : ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: Image.network(
+                              logoUrl,
+                              width: 44,
+                              height: 38,
+                              fit: BoxFit.contain,
+                              webHtmlElementStrategy:
+                                  WebHtmlElementStrategy.prefer,
+                              loadingBuilder: (_, child, progress) =>
+                                  progress == null
+                                  ? child
+                                  : const Icon(Icons.tv, color: Colors.white54),
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.broken_image_outlined,
+                                color: Colors.white54,
+                              ),
+                            ),
+                          ),
+                  ),
+                  title: Row(
                     children: [
-                      Container(
-                        width: 34,
-                        height: 34,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: Colors.black26,
-                          borderRadius: BorderRadius.circular(6),
+                      Text(
+                        c.channelNumber.toString().padLeft(2, '0'),
+                        style: TextStyle(
+                          color: widget.accentColor,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'monospace',
                         ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
                         child: Text(
-                          c.channelNumber.toString().padLeft(2, '0'),
-                          style: TextStyle(
-                            color: widget.accentColor,
-                            fontWeight: FontWeight.bold,
-                            fontFamily: 'monospace',
+                          c.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
                           ),
                         ),
                       ),
-                      if (c.logoUrl != null &&
-                          c.logoUrl!.trim().isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: Image.network(
-                            c.logoUrl!,
-                            width: 42,
-                            height: 34,
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, __, ___) =>
-                                const SizedBox(width: 42, height: 34),
-                          ),
-                        ),
-                      ],
                     ],
-                  ),
-                  title: Text(
-                    c.name,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                    ),
                   ),
                   subtitle: Text(
                     subtitle,
-                    style: const TextStyle(
-                      color: Colors.white54,
-                      fontSize: 11,
-                    ),
+                    style: const TextStyle(color: Colors.white54, fontSize: 11),
                   ),
                   enabled: c.enabled,
                   onTap: c.enabled ? () => widget.onSelect(c) : null,
