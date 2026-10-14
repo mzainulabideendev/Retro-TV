@@ -407,6 +407,7 @@ class _ChannelEditorDialogState extends State<_ChannelEditorDialog> {
   late TextEditingController _nameCtrl;
   late TextEditingController _numberCtrl;
   late TextEditingController _descCtrl;
+  late TextEditingController _logoUrlCtrl;
   String? _categoryId;
   String _channelType = 'general';
   bool _enabled = true;
@@ -437,6 +438,7 @@ class _ChannelEditorDialogState extends State<_ChannelEditorDialog> {
       text: c?.channelNumber.toString() ?? '',
     );
     _descCtrl = TextEditingController(text: c?.description ?? '');
+    _logoUrlCtrl = TextEditingController(text: c?.logoUrl ?? '');
     _categoryId = c?.categoryId;
     _channelType = c?.channelType ?? 'general';
     _enabled = c?.enabled ?? true;
@@ -465,6 +467,7 @@ class _ChannelEditorDialogState extends State<_ChannelEditorDialog> {
     _nameCtrl.dispose();
     _numberCtrl.dispose();
     _descCtrl.dispose();
+    _logoUrlCtrl.dispose();
     super.dispose();
   }
 
@@ -489,6 +492,9 @@ class _ChannelEditorDialogState extends State<_ChannelEditorDialog> {
             description: _descCtrl.text.trim().isEmpty
                 ? null
                 : _descCtrl.text.trim(),
+            logoUrl: _logoUrlCtrl.text.trim().isEmpty
+                ? null
+                : _logoUrlCtrl.text.trim(),
             categoryId: _categoryId,
             channelType: _channelType,
             defaultEpisodeId: _defaultEpisodeId,
@@ -510,6 +516,9 @@ class _ChannelEditorDialogState extends State<_ChannelEditorDialog> {
           'description': _descCtrl.text.trim().isEmpty
               ? null
               : _descCtrl.text.trim(),
+          'logo_url': _logoUrlCtrl.text.trim().isEmpty
+              ? null
+              : _logoUrlCtrl.text.trim(),
           'category_id': _categoryId,
           'channel_type': _channelType,
           'default_episode_id': _defaultEpisodeId,
@@ -583,6 +592,28 @@ class _ChannelEditorDialogState extends State<_ChannelEditorDialog> {
                     controller: _descCtrl,
                     decoration: const InputDecoration(labelText: 'Description'),
                     maxLines: 2,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _logoUrlCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Channel Image URL',
+                      hintText: 'https://example.com/channel-logo.png',
+                      helperText: 'Optional image shown in the channel guide.',
+                    ),
+                    keyboardType: TextInputType.url,
+                    validator: (value) {
+                      final url = value?.trim() ?? '';
+                      if (url.isEmpty) return null;
+                      final uri = Uri.tryParse(url);
+                      if (uri == null ||
+                          !uri.hasAuthority ||
+                          uri.host.isEmpty ||
+                          (uri.scheme != 'http' && uri.scheme != 'https')) {
+                        return 'Enter a valid HTTP or HTTPS image URL';
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(

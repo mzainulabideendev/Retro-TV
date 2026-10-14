@@ -95,22 +95,42 @@ class _ChannelGuideState extends State<ChannelGuide> {
                         : 'NOW: Off-air';
                 return ListTile(
                   dense: true,
-                  leading: Container(
-                    width: 34,
-                    height: 34,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: Colors.black26,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      c.channelNumber.toString().padLeft(2, '0'),
-                      style: TextStyle(
-                        color: widget.accentColor,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'monospace',
+                  leading: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: Colors.black26,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          c.channelNumber.toString().padLeft(2, '0'),
+                          style: TextStyle(
+                            color: widget.accentColor,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
                       ),
-                    ),
+                      if (c.logoUrl != null &&
+                          c.logoUrl!.trim().isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Image.network(
+                            c.logoUrl!,
+                            width: 42,
+                            height: 34,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) =>
+                                const SizedBox(width: 42, height: 34),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   title: Text(
                     c.name,
