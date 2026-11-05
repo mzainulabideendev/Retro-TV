@@ -14,6 +14,11 @@ class Channel {
   final bool isKidsFriendly;
   final int sortOrder;
 
+  /// Language code (see `channelLanguages`) of the cartoon/audio uploaded
+  /// for this channel, e.g. `en`, `hi`, `ur`. Null/empty on channels created
+  /// before language support, shown as "Unspecified".
+  final String? language;
+
   /// Per-channel loop override (NULL = follow the global site setting):
   /// true loops this channel's episodes forever, false stops after the
   /// final episode instead of wrapping back to episode 1.
@@ -34,6 +39,7 @@ class Channel {
     required this.featured,
     required this.isKidsFriendly,
     required this.sortOrder,
+    this.language,
     this.loopPlayback,
   });
 
@@ -53,6 +59,7 @@ class Channel {
       featured: map['featured'] as bool? ?? false,
       isKidsFriendly: map['is_kids_friendly'] as bool? ?? false,
       sortOrder: (map['sort_order'] as num?)?.toInt() ?? 0,
+      language: map['language'] as String?,
       loopPlayback: map['loop_playback'] as bool?,
     );
   }
@@ -71,6 +78,7 @@ class Channel {
     'featured': featured,
     'is_kids_friendly': isKidsFriendly,
     'sort_order': sortOrder,
+    'language': language,
     'loop_playback': loopPlayback,
   };
 
@@ -87,6 +95,7 @@ class Channel {
     bool? featured,
     bool? isKidsFriendly,
     int? sortOrder,
+    String? language,
     bool? loopPlayback,
   }) {
     return Channel(
@@ -104,6 +113,7 @@ class Channel {
       featured: featured ?? this.featured,
       isKidsFriendly: isKidsFriendly ?? this.isKidsFriendly,
       sortOrder: sortOrder ?? this.sortOrder,
+      language: language ?? this.language,
       loopPlayback: loopPlayback ?? this.loopPlayback,
     );
   }

@@ -94,8 +94,19 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  bool get _isTextInputFocused {
+    final context = FocusManager.instance.primaryFocus?.context;
+    if (context == null) return false;
+    return context.widget is EditableText ||
+        context.findAncestorWidgetOfExactType<EditableText>() != null;
+  }
+
   void _handleKey(KeyEvent event, TvState tv) {
     if (event is! KeyDownEvent) return;
+    // Never treat typing in the Channel Guide search box (or any other text
+    // field) as a TV remote shortcut — otherwise digits would tune channels
+    // and "g" would close the guide while searching.
+    if (_isTextInputFocused) return;
     // Digit keys 0-9 buffer a channel number, just like the on-screen pad.
     final digit = _digitFromKey(event.logicalKey);
     if (digit != null) {
@@ -268,20 +279,20 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 16),
           CrtTvFrame(
-              style: style,
-              poweredOn: tv.isOn,
-              startingUp: tv.power == PowerState.startingUp,
-              channelChanging: tv.channelChanging,
-              reduceEffects: tv.reduceEffects,
-              screenFilter: tv.screenFilter,
-              channelNumber: tv.currentChannel?.channelNumber ?? 0,
-              channelName: tv.currentChannel?.name ?? '',
-              digitBuffer: tv.digitBuffer,
-              volume: tv.effectiveVolume,
-              muted: tv.muted,
-              showVolumeOsd: _showVolumeOsd,
-              screenChild: _buildScreenContent(tv),
-            ),
+            style: style,
+            poweredOn: tv.isOn,
+            startingUp: tv.power == PowerState.startingUp,
+            channelChanging: tv.channelChanging,
+            reduceEffects: tv.reduceEffects,
+            screenFilter: tv.screenFilter,
+            channelNumber: tv.currentChannel?.channelNumber ?? 0,
+            channelName: tv.currentChannel?.name ?? '',
+            digitBuffer: tv.digitBuffer,
+            volume: tv.effectiveVolume,
+            muted: tv.muted,
+            showVolumeOsd: _showVolumeOsd,
+            screenChild: _buildScreenContent(tv),
+          ),
           const SizedBox(height: 8),
           Text(
             'Tip: use the remote controls (or press F) for fullscreen',

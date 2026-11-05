@@ -1,6 +1,6 @@
 # Installing Retro TV on Linux (amd64)
 
-Current release: **1.2.1** (build 5; tag `v1.2.1`). Requires an x86_64
+Current release: **1.2.4** (build 8; tag `v1.2.4`). Requires an x86_64
 machine with a display (X11 or Wayland). Releases are signed with GPG key
 `570D2F04129940F1A8561E4C35111918F6D14EA9` (`Retro TV <mzainulabideen.dev@gmail.com>`).
 
@@ -43,10 +43,26 @@ echo -e '[retro-tv]\nname=Retro TV\nbaseurl=https://mzainulabideendev.github.io/
 sudo dnf install retro-tv
 ```
 
-## Option C – direct download
+## Option C – Arch Linux (build from source)
 
-- `.deb`: https://mzainulabideendev.github.io/Retro-TV/apt/pool/main/r/retro-tv/retro-tv_1.2.1-5_amd64.deb
-- `.rpm`: https://mzainulabideendev.github.io/Retro-TV/dnf/retro-tv-1.2.1-5.x86_64.rpm
+The Arch PKGBUILD compiles the tagged source and requires Flutter 3.47.2 on your
+`PATH`:
+
+```bash
+sudo pacman -S --needed base-devel git gtk3 mpv gcc-libs clang cmake ninja patchelf
+mkdir -p "$HOME/.local/opt"
+curl -fL https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.47.2-stable.tar.xz -o /tmp/flutter-linux.tar.xz
+tar -xJf /tmp/flutter-linux.tar.xz -C "$HOME/.local/opt"
+export PATH="$HOME/.local/opt/flutter/bin:$PATH"
+mkdir -p "$HOME/src/retro-tv" && cd "$HOME/src/retro-tv"
+curl -fsSL https://raw.githubusercontent.com/mzainulabideendev/Retro-TV/v1.2.4/packaging/arch/PKGBUILD -o PKGBUILD
+makepkg -si
+```
+
+## Option D – direct download
+
+- `.deb`: https://mzainulabideendev.github.io/Retro-TV/apt/pool/main/r/retro-tv/retro-tv_1.2.4-8_amd64.deb
+- `.rpm`: https://mzainulabideendev.github.io/Retro-TV/dnf/retro-tv-1.2.4-8.x86_64.rpm
 - Checksums: https://mzainulabideendev.github.io/Retro-TV/SHA256SUMS
 - GitHub Release assets (including the `.flatpak`): https://github.com/mzainulabideendev/Retro-TV/releases
 
@@ -54,18 +70,18 @@ Install a downloaded deb/rpm directly:
 
 ```bash
 # Debian/Ubuntu
-sudo apt install ./retro-tv_1.2.1-5_amd64.deb
+sudo apt install ./retro-tv_1.2.4-8_amd64.deb
 # Fedora
-sudo dnf install ./retro-tv-1.2.1-5.x86_64.rpm
+sudo dnf install ./retro-tv-1.2.4-8.x86_64.rpm
 ```
 
-## Option D – Flatpak
+## Option E – Flatpak
 
-After downloading `RetroTV-1.2.1.5.flatpak` from the GitHub release:
+After downloading `RetroTV-1.2.4.8.flatpak` from the GitHub release:
 
 ```bash
 flatpak install --user org.kde.Platform//6.10
-flatpak install --user --noninteractive ./RetroTV-1.2.1.5.flatpak
+flatpak install --user --noninteractive ./RetroTV-1.2.4.8.flatpak
 flatpak run com.retrotv.retro_tv
 ```
 

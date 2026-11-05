@@ -12,7 +12,7 @@
 #   8. remove package
 #
 # Usage: test-apt-install.sh <apt-repo-dir> <expected-version> [<expected-version-code>]
-# Example: test-apt-install.sh build/repository/apt 1.2.1 5
+# Example: test-apt-install.sh build/repository/apt 1.2.4 8
 set -euo pipefail
 
 [ "$(id -u)" -eq 0 ] || { echo "test-apt-install: must run as root" >&2; exit 1; }
@@ -33,7 +33,13 @@ cleanup() { rm -f "$LIST"; }
 trap cleanup EXIT
 
 echo "[1/8] apt-get update"
-apt-get update -qq || { echo "test-apt-install: apt update FAILED" >&2; exit 1; }
+# The CI container uses a pinned Debian snapshot whose signed Release metadata
+# has an expired Valid-Until. Disable only that freshness check for this update;
+# APT still verifies the repository signatures as usual.
+# Ensure the unprivileged APT downloader can create its staged index files.
+install -d -o _apt -g root -m 0700 /var/lib/apt/lists/partial
+apt-get -o Acquire::Check-Valid-Until=false update -qq \
+    || { echo "test-apt-install: apt update FAILED" >&2; exit 1; }
 
 echo "[2/8] locate package (apt-cache policy)"
 apt-cache policy retro-tv
