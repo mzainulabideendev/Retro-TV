@@ -58,7 +58,7 @@ curl -fL https://storage.googleapis.com/flutter_infra_release/releases/stable/li
 tar -xJf /tmp/flutter-linux.tar.xz -C "$HOME/.local/opt"
 export PATH="$HOME/.local/opt/flutter/bin:$PATH"
 mkdir -p "$HOME/src/retro-tv" &amp;&amp; cd "$HOME/src/retro-tv"
-curl -fsSL https://raw.githubusercontent.com/mzainulabideendev/Retro-TV/v1.2.3/packaging/arch/PKGBUILD -o PKGBUILD
+curl -fsSL https://raw.githubusercontent.com/mzainulabideendev/Retro-TV/v1.2.4/packaging/arch/PKGBUILD -o PKGBUILD
 makepkg -si
 </pre>
 

@@ -1,6 +1,6 @@
 # Installing Retro TV on Linux (amd64)
 
-Current release: **1.2.3** (build 7; tag `v1.2.3`). Requires an x86_64
+Current release: **1.2.4** (build 8; tag `v1.2.4`). Requires an x86_64
 machine with a display (X11 or Wayland). Releases are signed with GPG key
 `570D2F04129940F1A8561E4C35111918F6D14EA9` (`Retro TV <mzainulabideen.dev@gmail.com>`).
 
@@ -55,14 +55,14 @@ curl -fL https://storage.googleapis.com/flutter_infra_release/releases/stable/li
 tar -xJf /tmp/flutter-linux.tar.xz -C "$HOME/.local/opt"
 export PATH="$HOME/.local/opt/flutter/bin:$PATH"
 mkdir -p "$HOME/src/retro-tv" && cd "$HOME/src/retro-tv"
-curl -fsSL https://raw.githubusercontent.com/mzainulabideendev/Retro-TV/v1.2.3/packaging/arch/PKGBUILD -o PKGBUILD
+curl -fsSL https://raw.githubusercontent.com/mzainulabideendev/Retro-TV/v1.2.4/packaging/arch/PKGBUILD -o PKGBUILD
 makepkg -si
 ```
 
 ## Option D – direct download
 
-- `.deb`: https://mzainulabideendev.github.io/Retro-TV/apt/pool/main/r/retro-tv/retro-tv_1.2.3-7_amd64.deb
-- `.rpm`: https://mzainulabideendev.github.io/Retro-TV/dnf/retro-tv-1.2.3-7.x86_64.rpm
+- `.deb`: https://mzainulabideendev.github.io/Retro-TV/apt/pool/main/r/retro-tv/retro-tv_1.2.4-8_amd64.deb
+- `.rpm`: https://mzainulabideendev.github.io/Retro-TV/dnf/retro-tv-1.2.4-8.x86_64.rpm
 - Checksums: https://mzainulabideendev.github.io/Retro-TV/SHA256SUMS
 - GitHub Release assets (including the `.flatpak`): https://github.com/mzainulabideendev/Retro-TV/releases
 
@@ -70,18 +70,18 @@ Install a downloaded deb/rpm directly:
 
 ```bash
 # Debian/Ubuntu
-sudo apt install ./retro-tv_1.2.3-7_amd64.deb
+sudo apt install ./retro-tv_1.2.4-8_amd64.deb
 # Fedora
-sudo dnf install ./retro-tv-1.2.3-7.x86_64.rpm
+sudo dnf install ./retro-tv-1.2.4-8.x86_64.rpm
 ```
 
 ## Option E – Flatpak
 
-After downloading `RetroTV-1.2.3.7.flatpak` from the GitHub release:
+After downloading `RetroTV-1.2.4.8.flatpak` from the GitHub release:
 
 ```bash
 flatpak install --user org.kde.Platform//6.10
-flatpak install --user --noninteractive ./RetroTV-1.2.3.7.flatpak
+flatpak install --user --noninteractive ./RetroTV-1.2.4.8.flatpak
 flatpak run com.retrotv.retro_tv
 ```
 

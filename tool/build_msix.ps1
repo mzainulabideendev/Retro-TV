@@ -137,8 +137,8 @@ try {
   $kitsRoot = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
   $makeappx = Resolve-Tool -Name "makeappx" -ExplicitPath $MakeAppxPath -SearchRoots @($kitsRoot, "$env:ProgramFiles\Windows Kits\10\bin") -InstallHint "Install the Windows SDK (winget/choco: windows-sdk-10.0.22621) or pass -MakeAppxPath."
 
-  $packageName = ("{0}-{1}-{2}" -f ($DisplayName -replace '[^A-Za-z0-9]', ''), $msixVersion, $Architecture)
-  $finalPackage = Join-Path $outputPath "$packageName.msix"
+  $artifactStem = ("{0}-{1}-{2}" -f ($DisplayName -replace '[^A-Za-z0-9]', ''), $msixVersion, $Architecture)
+  $finalPackage = Join-Path $outputPath "$artifactStem.msix"
   if (Test-Path -LiteralPath $finalPackage) { Remove-Item -LiteralPath $finalPackage -Force }
 
   Write-Host "packing $makeappx"
@@ -165,7 +165,7 @@ try {
       Export-PfxCertificate -Cert "Cert:\CurrentUser\My\$($certificate.Thumbprint)" -FilePath $tempPfx -Password $securePassword | Out-Null
       $CertificatePath = $tempPfx
       $CertificatePassword = $plainPassword
-      $cerPath = Join-Path $outputPath "$packageName.cer"
+      $cerPath = Join-Path $outputPath "$artifactStem.cer"
       Export-Certificate -Cert "Cert:\CurrentUser\My\$($certificate.Thumbprint)" -FilePath $cerPath | Out-Null
       Write-Host "signed with a generated self-signed certificate (subject $Publisher)"
       Write-Host "certificate for sideload testing: $cerPath"
@@ -198,9 +198,33 @@ try {
     if ($tempPfx -and (Test-Path -LiteralPath $tempPfx)) { Remove-Item -LiteralPath $tempPfx -Force }
   }
 
+  $submissionInfo = [ordered]@{
+    PackageFile = Split-Path -Leaf $finalPackage
+    Identity = [ordered]@{
+      Name = $PackageName
+      Publisher = $Publisher
+      PublisherDisplayName = $PublisherDisplayName
+      Version = $msixVersion
+      ProcessorArchitecture = $Architecture
+      PackageFamilyName = "MZainUlAbideen.RetroTV`_027zesk5dqdcm"
+      PackageSid = "S-1-15-2-217982967-2552712956-1440972190-1872265739-1362701409-814798254-3412643857"
+    }
+    MicrosoftStore = [ordered]@{
+      StoreId = "9N5PSC0V6632"
+      DeepLink = "ms-windows-store://pdp/?productid=9N5PSC0V6632"
+      WebUrl = "https://apps.microsoft.com/detail/9N5PSC0V6632"
+    }
+    RestrictedCapabilities = @("runFullTrust")
+    PackageSignedLocally = (-not $NoSign.IsPresent)
+    StoreSigning = "Microsoft Store signs the package after certification and publication."
+  }
+  $metadataPath = Join-Path $outputPath "StoreSubmissionInfo.json"
+  $submissionInfo | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
+
   Write-Host ""
   Write-Host "MSIX package: $finalPackage"
   Write-Host ("size: {0:N2} MB" -f ((Get-Item -LiteralPath $finalPackage).Length / 1MB))
+  Write-Host "Store submission metadata: $metadataPath"
   Write-Host ""
   Write-Host "Partner Center identity (must match your reservation exactly):"
   Write-Host "  Name      = $PackageName"

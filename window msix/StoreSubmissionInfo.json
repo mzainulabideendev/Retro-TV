@@ -1,0 +1,22 @@
+﻿{
+    "PackageFile":  "RetroTV-1.2.5.0-x64.msix",
+    "Identity":  {
+                     "Name":  "MZainUlAbideen.RetroTV",
+                     "Publisher":  "CN=1C68AC37-6A07-4F31-846A-C808E6F3934A",
+                     "PublisherDisplayName":  "M Zain Ul Abideen",
+                     "Version":  "1.2.5.0",
+                     "ProcessorArchitecture":  "x64",
+                     "PackageFamilyName":  "MZainUlAbideen.RetroTV_027zesk5dqdcm",
+                     "PackageSid":  "S-1-15-2-217982967-2552712956-1440972190-1872265739-1362701409-814798254-3412643857"
+                 },
+    "MicrosoftStore":  {
+                           "StoreId":  "9N5PSC0V6632",
+                           "DeepLink":  "ms-windows-store://pdp/?productid=9N5PSC0V6632",
+                           "WebUrl":  "https://apps.microsoft.com/detail/9N5PSC0V6632"
+                       },
+    "RestrictedCapabilities":  [
+                                   "runFullTrust"
+                               ],
+    "PackageSignedLocally":  true,
+    "StoreSigning":  "Microsoft Store signs the package after certification and publication."
+}

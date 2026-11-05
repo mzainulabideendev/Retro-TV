@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../models/category.dart';
 import '../../../models/channel.dart';
+import '../../../models/channel_language.dart';
 import '../../../models/episode.dart';
 import '../../../services/content_service.dart';
 import '../../../widgets/admin/admin_shared.dart';
@@ -34,6 +35,7 @@ class _ChannelsPanelState extends State<ChannelsPanel> {
   String _search = '';
   String? _filterCategoryId;
   String? _filterType;
+  String? _filterLanguage;
   bool? _filterEnabled;
 
   @override
@@ -68,18 +70,23 @@ class _ChannelsPanelState extends State<ChannelsPanel> {
   List<Channel> get _filtered {
     final q = _search.toLowerCase();
     return _channels.where((c) {
-      final matchesSearch = _search.isEmpty ||
+      final matchesSearch =
+          _search.isEmpty ||
           c.name.toLowerCase().contains(q) ||
           c.channelNumber.toString().contains(q) ||
-          c.channelType.toLowerCase().contains(q);
-      final matchesCategory = _filterCategoryId == null ||
-          c.categoryId == _filterCategoryId;
+          c.channelType.toLowerCase().contains(q) ||
+          channelLanguageLabel(c.language).toLowerCase().contains(q);
+      final matchesCategory =
+          _filterCategoryId == null || c.categoryId == _filterCategoryId;
       final matchesType = _filterType == null || c.channelType == _filterType;
+      final matchesLanguage =
+          _filterLanguage == null || c.language == _filterLanguage;
       final matchesEnabled =
           _filterEnabled == null || c.enabled == _filterEnabled;
       return matchesSearch &&
           matchesCategory &&
           matchesType &&
+          matchesLanguage &&
           matchesEnabled;
     }).toList();
   }
@@ -170,8 +177,8 @@ class _ChannelsPanelState extends State<ChannelsPanel> {
         final label = value == null
             ? 'follows the global default'
             : value
-                ? 'repeats episodes forever'
-                : 'stops after the final episode';
+            ? 'repeats episodes forever'
+            : 'stops after the final episode';
         showSuccess(context, '${c.name}: loop $label.');
       }
       _load();
@@ -181,10 +188,10 @@ class _ChannelsPanelState extends State<ChannelsPanel> {
   }
 
   (String, IconData) _loopLabel(bool? value) => switch (value) {
-        true => ('Loop', Icons.repeat),
-        false => ('Stop', Icons.stop),
-        null => ('Default', Icons.settings),
-      };
+    true => ('Loop', Icons.repeat),
+    false => ('Stop', Icons.stop),
+    null => ('Default', Icons.settings),
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -228,8 +235,7 @@ class _ChannelsPanelState extends State<ChannelsPanel> {
                         label: 'Category',
                         options: _categories.map((c) => c.id).toList(),
                         itemLabel: (id) => _categoryName(id),
-                        onChanged: (v) =>
-                            setState(() => _filterCategoryId = v),
+                        onChanged: (v) => setState(() => _filterCategoryId = v),
                       ),
                     ),
                     SizedBox(
@@ -238,9 +244,25 @@ class _ChannelsPanelState extends State<ChannelsPanel> {
                         value: _filterType,
                         label: 'Type',
                         options: _types,
-                        itemLabel: (t) =>
-                            t.replaceAll('_', ' ').toUpperCase(),
+                        itemLabel: (t) => t.replaceAll('_', ' ').toUpperCase(),
                         onChanged: (v) => setState(() => _filterType = v),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 150,
+                      child: AdminFilterDropdown<String>(
+                        value: _filterLanguage,
+                        label: 'Language',
+                        options:
+                            (_channels
+                                .map((c) => c.language?.trim())
+                                .whereType<String>()
+                                .where((code) => code.isNotEmpty)
+                                .toSet()
+                                .toList()
+                              ..sort()),
+                        itemLabel: channelLanguageLabel,
+                        onChanged: (v) => setState(() => _filterLanguage = v),
                       ),
                     ),
                     SizedBox(
@@ -250,8 +272,7 @@ class _ChannelsPanelState extends State<ChannelsPanel> {
                         label: 'Status',
                         options: const [true, false],
                         itemLabel: (v) => v ? 'Enabled' : 'Disabled',
-                        onChanged: (v) =>
-                            setState(() => _filterEnabled = v),
+                        onChanged: (v) => setState(() => _filterEnabled = v),
                       ),
                     ),
                     TextButton.icon(
@@ -260,6 +281,7 @@ class _ChannelsPanelState extends State<ChannelsPanel> {
                         _search = '';
                         _filterCategoryId = null;
                         _filterType = null;
+                        _filterLanguage = null;
                         _filterEnabled = null;
                       }),
                       icon: const Icon(Icons.filter_alt_off, size: 16),
@@ -277,6 +299,7 @@ class _ChannelsPanelState extends State<ChannelsPanel> {
                           DataColumn(label: Text('Channel')),
                           DataColumn(label: Text('Category')),
                           DataColumn(label: Text('Type')),
+                          DataColumn(label: Text('Language')),
                           DataColumn(label: Text('Loop')),
                           DataColumn(label: Text('Status')),
                           DataColumn(label: Text('Actions')),
@@ -292,6 +315,7 @@ class _ChannelsPanelState extends State<ChannelsPanel> {
                               DataCell(Text(c.name)),
                               DataCell(Text(_categoryName(c.categoryId))),
                               DataCell(Text(c.channelType)),
+                              DataCell(Text(channelLanguageLabel(c.language))),
                               DataCell(
                                 PopupMenuButton<bool?>(
                                   initialValue: c.loopPlayback,
@@ -302,21 +326,15 @@ class _ChannelsPanelState extends State<ChannelsPanel> {
                                   itemBuilder: (_) => const [
                                     PopupMenuItem(
                                       value: null,
-                                      child: Text(
-                                        'Default (follows global)',
-                                      ),
+                                      child: Text('Default (follows global)'),
                                     ),
                                     PopupMenuItem(
                                       value: true,
-                                      child: Text(
-                                        'Loop ON (repeat forever)',
-                                      ),
+                                      child: Text('Loop ON (repeat forever)'),
                                     ),
                                     PopupMenuItem(
                                       value: false,
-                                      child: Text(
-                                        'Stop after final episode',
-                                      ),
+                                      child: Text('Stop after final episode'),
                                     ),
                                   ],
                                   onSelected: (v) => _setLoop(c, v),
@@ -410,6 +428,7 @@ class _ChannelEditorDialogState extends State<_ChannelEditorDialog> {
   late TextEditingController _logoUrlCtrl;
   String? _categoryId;
   String _channelType = 'general';
+  String? _language;
   bool _enabled = true;
   bool _featured = false;
   bool _kidsFriendly = false;
@@ -441,6 +460,8 @@ class _ChannelEditorDialogState extends State<_ChannelEditorDialog> {
     _logoUrlCtrl = TextEditingController(text: c?.logoUrl ?? '');
     _categoryId = c?.categoryId;
     _channelType = c?.channelType ?? 'general';
+    _language = c?.language?.trim().toLowerCase();
+    if (_language != null && _language!.isEmpty) _language = null;
     _enabled = c?.enabled ?? true;
     _featured = c?.featured ?? false;
     _kidsFriendly = c?.isKidsFriendly ?? false;
@@ -460,6 +481,19 @@ class _ChannelEditorDialogState extends State<_ChannelEditorDialog> {
       return aMatch ? -1 : 1;
     });
     return list;
+  }
+
+  /// Language dropdown options, including a legacy/unknown code already
+  /// stored on this channel so editing never resets it silently.
+  List<ChannelLanguage> get _languageOptions {
+    final options = [...channelLanguages];
+    final current = _language?.trim().toLowerCase();
+    if (current != null &&
+        current.isNotEmpty &&
+        !options.any((language) => language.code == current)) {
+      options.add(ChannelLanguage(current, channelLanguageLabel(current)));
+    }
+    return options;
   }
 
   @override
@@ -498,6 +532,7 @@ class _ChannelEditorDialogState extends State<_ChannelEditorDialog> {
             categoryId: _categoryId,
             channelType: _channelType,
             defaultEpisodeId: _defaultEpisodeId,
+            language: _language,
             enabled: _enabled,
             featured: _featured,
             isKidsFriendly: _kidsFriendly,
@@ -522,6 +557,7 @@ class _ChannelEditorDialogState extends State<_ChannelEditorDialog> {
           'category_id': _categoryId,
           'channel_type': _channelType,
           'default_episode_id': _defaultEpisodeId,
+          'language': _language,
           'enabled': _enabled,
           'featured': _featured,
           'is_kids_friendly': _kidsFriendly,
@@ -640,6 +676,31 @@ class _ChannelEditorDialogState extends State<_ChannelEditorDialog> {
                         .toList(),
                     onChanged: (v) =>
                         setState(() => _channelType = v ?? 'general'),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: _language,
+                    decoration: const InputDecoration(
+                      labelText: 'Cartoon / Audio Language',
+                      helperText:
+                          'Language of the cartoon uploaded for this '
+                          'channel. Viewers can filter the Channel Guide by '
+                          'this language.',
+                      helperMaxLines: 3,
+                    ),
+                    items: [
+                      const DropdownMenuItem<String>(
+                        value: null,
+                        child: Text('— Unspecified —'),
+                      ),
+                      ..._languageOptions.map(
+                        (language) => DropdownMenuItem(
+                          value: language.code,
+                          child: Text(language.label),
+                        ),
+                      ),
+                    ],
+                    onChanged: (v) => setState(() => _language = v),
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
