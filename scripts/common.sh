@@ -12,7 +12,7 @@ BUNDLE_DIR="$BUILD_DIR/linux/x64/release/bundle"
 log()  { printf '[build] %s\n' "$*"; }
 die()  { printf '[build] ERROR: %s\n' "$*" >&2; exit 1; }
 
-# Read name (1.2.1) and code (5) from pubspec.yaml's `version: 1.2.1+5` line.
+# Read the version name and build code from pubspec.yaml's version line.
 read_version() {
     local line version_line
     version_line="$(grep -E '^version:[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+(\+[0-9]+)?[[:space:]]*$' "$ROOT_DIR/pubspec.yaml" | head -n1)"

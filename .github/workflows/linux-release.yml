@@ -5,6 +5,21 @@ on:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+*'
   workflow_dispatch:
+    inputs:
+      # CI SAFETY GATE. Defaults to false so a manual run is validation-only and
+      # cannot create a public GitHub Release or overwrite the live GitHub Pages
+      # site. When enabled on a branch, the workflow creates a new version tag
+      # before publishing. Tag pushes always publish as usual.
+      publish_release:
+        description: 'Publish the GitHub Release + GitHub Pages. Leave false for CI validation runs.'
+        required: false
+        type: boolean
+        default: false
+      publish_pages_only:
+        description: 'Deploy GitHub Pages without creating a GitHub Release (docs/site-only updates).'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -25,22 +40,57 @@ jobs:
       - uses: actions/checkout@v4
       - id: version
         run: |
+          # Decide where the version comes from BEFORE validating anything.
+          # On workflow_dispatch, GITHUB_REF_NAME is a BRANCH name, never a
+          # release tag, so comparing it against the pubspec version produces a
+          # misleading "release tag ... does not match" warning. Only a real
+          # tag push is a release.
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            source="release tag"
+          else
+            source="pubspec.yaml"
+          fi
+
           line="$(grep -E '^version:' pubspec.yaml | head -n1)"
           full="$(echo "$line" | sed -E 's/^version:[[:space:]]*//; s/[[:space:]]*$//')"
           name="${full%%+*}"
           code="${full##*+}"
+
+          echo "EVENT:          $GITHUB_EVENT_NAME"
+          echo "REF:            $GITHUB_REF"
+          echo "REF_NAME:       $GITHUB_REF_NAME"
+          echo "REF_TYPE:       $GITHUB_REF_TYPE"
+          echo "VERSION SOURCE: $source"
+          echo "VERSION:        $full (name=$name code=$code)"
+
           echo "name=$name" >> "$GITHUB_OUTPUT"
           echo "code=$code" >> "$GITHUB_OUTPUT"
           echo "full=$full" >> "$GITHUB_OUTPUT"
-          tag="${GITHUB_REF_NAME#v}"
-          if [ "$tag" != "$name" ]; then
-            echo "::warning::release tag $GITHUB_REF_NAME does not match pubspec version $full"
+
+          # Release-tag validation runs ONLY for a real tag push, and its
+          # behaviour is unchanged from the original workflow: a mismatch is
+          # reported as a warning, exactly as before. Nothing here can fail the
+          # job, so production tag releases behave precisely as they did.
+          if [ "$source" = "release tag" ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            if [ "$tag" != "$name" ]; then
+              echo "::warning::release tag $GITHUB_REF_NAME does not match pubspec version $full"
+            fi
+          else
+            echo "[version] $GITHUB_EVENT_NAME on '$GITHUB_REF_NAME' is not a release tag push; using pubspec version $full (tag validation skipped)"
           fi
 
   test-build-linux:
+    needs: resolve-version
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Archive source for Arch package build
+        env:
+          NV: ${{ needs.resolve-version.outputs.name }}
+        run: |
+          mkdir -p build
+          git archive --format=tar.gz --prefix="Retro-TV-${NV}/" HEAD > build/retro-tv-ci-source.tar.gz
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -66,6 +116,177 @@ jobs:
         with:
           name: linux-bundle
           path: build/linux/x64/release/bundle
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-source
+          path: build/retro-tv-ci-source.tar.gz
+          if-no-files-found: error
+
+  apple-release-ios:
+    if: (github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true)
+    needs: resolve-version
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Validate iOS signing secrets
+        env:
+          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          for name in IOS_CERTIFICATE IOS_CERTIFICATE_PASSWORD IOS_PROVISIONING_PROFILE IOS_TEAM_ID; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Required GitHub secret is missing: $name"
+              exit 1
+            fi
+          done
+      - name: Import Apple Distribution certificate
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+          p12-password: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+      - name: Install App Store provisioning profile
+        env:
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          profile="$RUNNER_TEMP/retro-tv-app-store.mobileprovision"
+          printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 -D > "$profile"
+          security cms -D -i "$profile" > "$RUNNER_TEMP/retro-tv-app-store.plist"
+          profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print UUID' "$RUNNER_TEMP/retro-tv-app-store.plist")
+          profile_name=$(/usr/libexec/PlistBuddy -c 'Print Name' "$RUNNER_TEMP/retro-tv-app-store.plist")
+          profiles="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$profiles"
+          cp "$profile" "$profiles/$profile_uuid.mobileprovision"
+          echo "IOS_PROFILE_NAME=$profile_name" >> "$GITHUB_ENV"
+      - name: Install Flutter dependencies
+        run: flutter pub get
+      - name: Generate iOS build configuration
+        run: flutter build ios --release --no-codesign --build-name "${{ needs.resolve-version.outputs.name }}" --build-number "${{ needs.resolve-version.outputs.code }}"
+      - name: Archive signed iOS app
+        env:
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          xcodebuild \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/RetroTV.xcarchive" \
+            archive \
+            DEVELOPMENT_TEAM="$IOS_TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="$IOS_PROFILE_NAME"
+      - name: Export App Store IPA
+        env:
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import plistlib
+
+          options = {
+              "destination": "export",
+              "method": "app-store-connect",
+              "provisioningProfiles": {
+                  "com.retrotv.retroTv": os.environ["IOS_PROFILE_NAME"],
+              },
+              "signingStyle": "manual",
+              "teamID": os.environ["IOS_TEAM_ID"],
+          }
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "ExportOptions.plist"), "wb") as output:
+              plistlib.dump(options, output)
+          PY
+          mkdir -p build/ios/ipa
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$RUNNER_TEMP/RetroTV.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath build/ios/ipa
+          mv build/ios/ipa/*.ipa "build/ios/ipa/RetroTV-${{ needs.resolve-version.outputs.name }}-iOS.ipa"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: retro-tv-ios-ipa
+          path: build/ios/ipa/*.ipa
+          if-no-files-found: error
+
+  apple-release-macos:
+    if: (github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true)
+    needs: resolve-version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Validate macOS signing and notarization secrets
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_NOTARY_API_KEY: ${{ secrets.APPLE_NOTARY_API_KEY_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          for name in MACOS_CERTIFICATE MACOS_CERTIFICATE_PASSWORD APPLE_NOTARY_API_KEY APPLE_NOTARY_KEY_ID APPLE_NOTARY_ISSUER_ID; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Required GitHub secret is missing: $name"
+              exit 1
+            fi
+          done
+      - name: Import Developer ID certificate
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          p12-password: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      - name: Install Flutter dependencies
+        run: flutter pub get
+      - name: Build macOS app
+        run: flutter build macos --release --no-codesign --build-name "${{ needs.resolve-version.outputs.name }}" --build-number "${{ needs.resolve-version.outputs.code }}"
+      - name: Sign and notarize macOS app
+        env:
+          APPLE_NOTARY_API_KEY_BASE64: ${{ secrets.APPLE_NOTARY_API_KEY_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          app="build/macos/Build/Products/Release/retro_tv.app"
+          identity=$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)
+          if [[ -z "$identity" ]]; then
+            echo "::error::No Developer ID Application signing identity was imported."
+            exit 1
+          fi
+          test -d "$app"
+          codesign --force --deep --options runtime --timestamp --entitlements macos/Runner/Release.entitlements --sign "$identity" "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          key="$RUNNER_TEMP/AuthKey_${APPLE_NOTARY_KEY_ID}.p8"
+          printf '%s' "$APPLE_NOTARY_API_KEY_BASE64" | base64 -D > "$key"
+          zip="build/macos/RetroTV-${{ needs.resolve-version.outputs.name }}-macos-${{ matrix.arch }}.zip"
+          mkdir -p "$(dirname "$zip")"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
+          xcrun notarytool submit "$zip" --key "$key" --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER_ID" --wait
+          xcrun stapler staple "$app"
+          xcrun stapler validate "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: retro-tv-macos-${{ matrix.arch }}
+          path: build/macos/RetroTV-*-macos-${{ matrix.arch }}.zip
           if-no-files-found: error
 
   package-deb:
@@ -122,12 +343,16 @@ jobs:
   # PKGBUILD published to the AUR), then installs the built package and checks
   # the executable. Non-blocking: failures do not hold back the main release.
   package-arch:
-    needs: test-build-linux
+    needs: [resolve-version, test-build-linux]
     runs-on: ubuntu-24.04
     container: archlinux:latest
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: arch-source
+          path: build
       - name: Install toolchain
         run: |
           pacman -Sy --noconfirm --needed base-devel fakeroot clang cmake ninja git patchelf sudo
@@ -143,6 +368,8 @@ jobs:
           git config --global --add safe.directory '*'
           /opt/flutter-sdk/bin/flutter --version
       - name: Prepare build user and verify Flutter access
+        env:
+          NV: ${{ needs.resolve-version.outputs.name }}
         run: |
           useradd -m build
           chown -R build:build "$GITHUB_WORKSPACE"
@@ -155,9 +382,13 @@ jobs:
           sudo -u build -H git -C /opt/flutter-sdk rev-parse --is-inside-work-tree
           # Verify Flutter runs as the build user
           sudo -u build -H /opt/flutter-sdk/bin/flutter --version
+          # The source archive comes from the checkout job because this
+          # container workspace does not retain Git metadata.
+          test -s "$GITHUB_WORKSPACE/build/retro-tv-ci-source.tar.gz"
+          chown build:build "$GITHUB_WORKSPACE/build/retro-tv-ci-source.tar.gz"
       - name: Build PKGBUILD (non-root)
         run: |
-          sudo -u build -H bash -c "export PATH=/opt/flutter-sdk/bin:\$PATH; export PUB_CACHE='$GITHUB_WORKSPACE/.pub-cache'; cd '$GITHUB_WORKSPACE' && bash scripts/build-arch.sh"
+          sudo -u build -H bash -c "export PATH=/opt/flutter-sdk/bin:\$PATH; export PUB_CACHE='$GITHUB_WORKSPACE/.pub-cache'; export RETRO_TV_SOURCE_ARCHIVE='$GITHUB_WORKSPACE/build/retro-tv-ci-source.tar.gz'; cd '$GITHUB_WORKSPACE' && bash scripts/build-arch.sh"
       - name: Install and verify executable (pacman)
         run: |
           pacman -U --noconfirm build/packages/retro-tv-*.pkg.tar.zst
@@ -205,19 +436,163 @@ jobs:
   # Debian bullseye still ships dpkg-sig 0.13.1+nmu4, so a bullseye container
   # gives us a real dpkg-sig for both .deb signing and signature verification
   # via a plain apt install - no mirror, no pinned .deb URL, no source build.
+  #
+  # APT SOURCES ARE PINNED TO A FIXED DEBIAN SNAPSHOT (DEB_SNAPSHOT below).
+  #
+  # Why pinned: Bullseye reached EOL on 2026-08-31. The live
+  # deb.debian.org/debian-security Bullseye index still advertises package
+  # versions whose .deb files now return HTTP 404, so `apt-get install` dies
+  # on perl, perl-modules-5.32, libperl5.32, openssl, ca-certificates,
+  # libnghttp2-14, libcurl3-gnutls, libexpat1, git, git-man and sudo.
+  #
+  # Why a snapshot: snapshot.debian.org is official Debian infrastructure and is
+  # immutable, so one fixed timestamp resolves to the same bytes forever. That
+  # makes this signing environment reproducible and keeps the bootstrap working
+  # months from now instead of depending on a post-EOL archive that is still
+  # being edited. It replaces the now-broken live Bullseye security repository.
+  #
+  # Why 20260831T000000Z: it is the newest capture at which the COMPLETE
+  # Bullseye security pool is still on disk. Captures from 20260910 onward
+  # publish a bullseye-security Release whose package files are already gone.
+  # At this pin the highest version of every package these two steps install
+  # was resolved out of the signed indices and its pool .deb was fetched
+  # successfully:
+  #   dpkg-sig 0.13.1+nmu4, gnupg/gpg/gpgv/dirmngr 2.2.27-2+deb11u3,
+  #   perl/perl-base/perl-modules-5.32/libperl5.32 5.32.1-4+deb11u5,
+  #   ca-certificates 20250419~deb12u1~deb11u1,
+  #   git/git-man 1:2.30.2-1+deb11u5, sudo 1.9.5p2-3+deb11u4,
+  #   file 1:5.39-3+deb11u1, rpm 4.16.1.2+dfsg1-3, createrepo-c 0.17.0-1,
+  #   apt-utils 2.2.4.
+  #
+  # Valid-Until: the bullseye-security Release at this pin carries
+  # "Valid-Until: 06 Sep 2026", which has already passed, so the single
+  # `apt-get update` below is invoked with -o Acquire::Check-Valid-Until=false.
+  # That option is passed on that one command line only and is never written to
+  # any apt config file, so it cannot leak into unrelated apt operations. It
+  # only suppresses a freshness assertion - it does NOT weaken authenticity:
+  # apt still fetches and verifies the GPG-signed Release/InRelease against
+  # /usr/share/keyrings/debian-archive-keyring.gpg. There is no [trusted=yes],
+  # no Acquire::AllowInsecureRepositories and no --allow-unauthenticated.
   sign-and-verify:
     needs: [resolve-version, package-deb, package-rpm, package-flatpak]
     runs-on: ubuntu-latest
     container:
       image: debian:bullseye-slim
+    # Bash must be requested explicitly. Without this, run: steps inside a
+    # container job fall back to the runner default, which resolved to
+    # "sh -e {0}" (dash) here, and dash's set has no -o pipefail. That killed
+    # the bootstrap step on its very first line with
+    # "set: Illegal option -o pipefail" (exit 2) before apt ever ran.
+    # The steps below are written for bash (set -euo pipefail, [[ ]]), so the
+    # correct fix is to declare bash - not to rewrite them as POSIX sh.
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Fixed, immutable snapshot.debian.org capture. See the comment above.
+      DEB_SNAPSHOT: '20260831T000000Z'
     steps:
       # debian:bullseye-slim is a bare image. git is required by
       # actions/checkout, sudo by the steps below (kept for consistency with the
-      # non-container jobs) and file by scripts/test-apt-install.sh.
+      # non-container jobs), file by scripts/test-apt-install.sh and
+      # ca-certificates by the HTTPS calls the actions make over the network.
       - name: Bootstrap container tooling
         run: |
-          apt-get update
+          set -euo pipefail
+          echo "=== [bootstrap] container identity ==="
+          cat /etc/os-release
+          echo "arch: $(dpkg --print-architecture) ($(uname -m))"
+          echo
+          echo "=== [bootstrap] apt sources shipped in the image (pre-existing) ==="
+          cat /etc/apt/sources.list 2>/dev/null || true
+          ls -1 /etc/apt/sources.list.d/ 2>/dev/null || true
+          echo
+          echo "=== [bootstrap] selected Debian snapshot: ${DEB_SNAPSHOT} ==="
+          # http:// on purpose: this slim image has no CA bundle before the
+          # first update, and snapshot.debian.org serves http without
+          # upgrading to https. Authenticity comes from the GPG-signed
+          # Release/InRelease, which apt verifies below.
+          # The security component must be "main", NOT "updates/main".
+          # The signed bullseye-security Release at this pin advertises
+          #   Components: updates/main updates/contrib updates/non-free
+          # but its MD5Sum/SHA1/SHA256 sections only carry hashes for index
+          # paths under  main/, contrib/ and non-free/  - there is no
+          # "updates/main/binary-amd64/Packages*" entry. snapshot.debian.org
+          # does serve that path on request, but only by serving the "main"
+          # file, and apt refuses any index the signed Release does not
+          # attest to. So with "updates/main" configured, apt fetched the
+          # security InRelease, found no signed hash for the requested
+          # component, and silently skipped the entire security binary index:
+          # every security package was invisible to the resolver.
+          # The visible symptom was
+          #   perl : Depends: perl-base (= 5.32.1-4+deb11u3)
+          #          but 5.32.1-4+deb11u5 is to be installed
+          # because the image ships perl-base 5.32.1-4+deb11u5 preinstalled
+          # (Essential: yes) while only the bullseye/main u3 perl was visible.
+          # Using "main" restores the security index, which makes the u5
+          # perl/perl-base pair resolvable and matching the installed base.
+          printf '%s\n' \
+            "# Debian Bullseye pinned to immutable snapshot.debian.org capture ${DEB_SNAPSHOT}." \
+            "# Signatures are still verified against debian-archive-keyring.gpg." \
+            "deb http://snapshot.debian.org/archive/debian/${DEB_SNAPSHOT} bullseye main" \
+            "deb http://snapshot.debian.org/archive/debian-security/${DEB_SNAPSHOT} bullseye-security main" \
+            > /etc/apt/sources.list
+          rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources
+          cat /etc/apt/sources.list
+          echo
+          echo "=== [bootstrap] apt-get update against the pinned snapshot only ==="
+          apt-get -o Acquire::Check-Valid-Until=false update
+          echo
+          echo "=== [bootstrap] DIAGNOSTIC: active apt sources (authoritative) ==="
+          grep -RhE '^[[:space:]]*deb ' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null | sort -u || true
+          echo "--- any source that is NOT a pinned snapshot (must print none) ---"
+          if grep -RhE '^[[:space:]]*deb ' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null \
+               | grep -v 'snapshot\.debian\.org/archive/'; then
+            echo "!!! UNEXPECTED NON-SNAPSHOT SOURCE ACTIVE !!!"
+            exit 1
+          else
+            echo "OK: every active source is a pinned snapshot.debian.org capture"
+          fi
+          echo
+          # Regression guard for the failure documented at the sources.list
+          # above: when the configured security component is not attested by
+          # the signed Release, apt fetches the InRelease, silently skips the
+          # whole security binary index and every security package vanishes
+          # from the resolver. Detect that here instead of several steps later.
+          # Plain glob, no pipeline, so pipefail/SIGPIPE cannot mask the result.
+          echo "=== [bootstrap] verifying the security binary index was actually fetched ==="
+          shopt -s nullglob
+          security_index_found=0
+          for _f in /var/lib/apt/lists/*bullseye-security*binary-amd64_Packages*; do
+            security_index_found=1
+            break
+          done
+          shopt -u nullglob
+          if [[ "$security_index_found" -ne 1 ]]; then
+            echo "ERROR: no bullseye-security binary-amd64 index under /var/lib/apt/lists"
+            echo "       the configured security component is not attested by the signed Release"
+            exit 1
+          fi
+          echo "OK: bullseye-security binary-amd64 index is present"
+          echo
+          echo "=== [bootstrap] installing container prerequisites ==="
           apt-get install -y --no-install-recommends git sudo file ca-certificates
+          echo
+          echo "=== [bootstrap] verifying the installed perl / perl-base pair ==="
+          dpkg-query -W -f='${Package} ${Version}\n' perl perl-base
+          PERL_VERSION="$(dpkg-query -W -f='${Version}' perl)"
+          PERL_BASE_VERSION="$(dpkg-query -W -f='${Version}' perl-base)"
+          if [[ "$PERL_VERSION" != "$PERL_BASE_VERSION" ]]; then
+            echo "ERROR: perl/perl-base version mismatch (perl=${PERL_VERSION} perl-base=${PERL_BASE_VERSION})"
+            exit 1
+          fi
+          echo "OK: perl and perl-base are a matching pair: ${PERL_VERSION}"
+          echo
+          echo "=== [bootstrap] verifying the remaining container prerequisites ==="
+          git --version
+          sudo --version
+          file --version
+          dpkg-query -W -f='${Package} ${Version}\n' ca-certificates
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
@@ -238,14 +613,41 @@ jobs:
           cat /etc/os-release
           echo "[build] Architecture:"
           dpkg --print-architecture
+          echo "[build] Selected Debian snapshot: ${DEB_SNAPSHOT}"
           echo "[build] Checking apt sources..."
           grep -Rhv '^[[:space:]]*#' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true
           
           echo "[build] Updating apt metadata..."
-          sudo apt-get update
+          # Scoped to this command line: the pinned bullseye-security Release
+          # carries an expired Valid-Until (see the comment on this job). This
+          # suppresses only that freshness check; Release/InRelease signatures
+          # are still verified normally.
+          sudo apt-get -o Acquire::Check-Valid-Until=false update
+
+          echo "[build] Candidate versions from the pinned snapshot:"
+          for pkg in dpkg-sig gnupg perl; do
+            apt-cache policy "$pkg"
+          done
           
           echo "[build] Installing repository tooling..."
           sudo apt-get install -y --no-install-recommends apt-utils createrepo-c rpm gnupg dpkg-sig
+
+          echo "[build] Installed tool versions:"
+          command -v dpkg-sig
+          # dpkg-sig has no --version option (its option table is
+          # sign|list|verify|verify-role|...|help|-v), so ask dpkg instead.
+          dpkg-query -W -f='${Package} ${Version}\n' dpkg-sig
+          # No pipe here: `gpg --version | head -n1` can hand gpg a SIGPIPE
+          # (141) under `set -o pipefail` and kill the step.
+          gpg --version
+          git --version
+          rpm --version
+          createrepo_c --version
+          DPKG_SIG_VERSION="$(dpkg-query -W -f='${Version}' dpkg-sig)"
+          test "$DPKG_SIG_VERSION" = "0.13.1+nmu4" || {
+            echo "::error::expected dpkg-sig 0.13.1+nmu4 from the pinned snapshot, got ${DPKG_SIG_VERSION}"
+            exit 1
+          }
 
           echo "[build] Verifying repository tooling..."
           command -v gpg >/dev/null 2>&1 || {
@@ -288,9 +690,13 @@ jobs:
           GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
+          unset GPG_TTY
+          GPG_BIN="$(command -v gpg)"
+          test -x "$GPG_BIN"
+          echo "[build] RPM signing with $GPG_BIN"
           shopt -s nullglob
           for f in build/packages/retro-tv-*.rpm; do
-            rpmsign --define "%_gpg_name $GPG_KEY_ID" --define "%_gpg_passphrase $GPG_PASSPHRASE" --addsign "$f"
+            rpmsign --define "__gpg $GPG_BIN" --define "%_gpg_name $GPG_KEY_ID" --define "%_gpg_passphrase $GPG_PASSPHRASE" --addsign "$f"
           done
       - name: Generate SHA256SUMS
         run: |
@@ -312,12 +718,6 @@ jobs:
         run: bash scripts/generate-dnf-repository.sh
       - name: Verify release artifacts
         run: bash scripts/verify-release.sh
-      - name: Debian/Ubuntu end-to-end install test
-        env:
-          NV: ${{ needs.resolve-version.outputs.name }}
-          NC: ${{ needs.resolve-version.outputs.code }}
-        run: |
-          sudo bash scripts/test-apt-install.sh "$PWD/build/repository/apt" "$NV" "$NC"
       - uses: actions/upload-artifact@v4
         with:
           name: repository
@@ -328,6 +728,25 @@ jobs:
           name: packages
           path: build/packages
           if-no-files-found: error
+
+  # The .deb is built on Ubuntu 24.04 and depends on its libmpv2 ABI. Bullseye
+  # provides libmpv1 instead, so exercise APT installation on the target Ubuntu.
+  test-apt-install:
+    needs: [resolve-version, sign-and-verify]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: repository
+          path: build/repository
+      - name: Install test utility
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq file
+      - name: Ubuntu end-to-end install test
+        env:
+          NV: ${{ needs.resolve-version.outputs.name }}
+          NC: ${{ needs.resolve-version.outputs.code }}
+        run: sudo bash scripts/test-apt-install.sh "$PWD/build/repository/apt" "$NV" "$NC"
 
   # Fedora/RHEL install test in a real fedora container. Runs AFTER signing so
   # it validates the exact signed repository that will be published.
@@ -345,9 +764,34 @@ jobs:
         run: bash scripts/test-dnf-install.sh "$PWD/build/repository/dnf"
 
   publish:
-    needs: [resolve-version, sign-and-verify, test-fedora-install]
+    # This job is the ONLY irreversible part of the pipeline: it deploys
+    # GitHub Pages and creates a public GitHub Release with package assets.
+    #
+    # Tag pushes (the real release path) always publish, exactly as before.
+    # A manual workflow_dispatch run publishes ONLY when publish_release is
+    # enabled. publish_pages_only deploys Pages without touching GitHub Releases.
+    if: always() && ((github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && (inputs.publish_release == true || inputs.publish_pages_only == true)))
+    needs: [resolve-version, sign-and-verify, test-apt-install, test-fedora-install, apple-release-ios, apple-release-macos]
     runs-on: ubuntu-latest
     steps:
+      - name: Verify release prerequisites
+        env:
+          VERSION_RESULT: ${{ needs.resolve-version.result }}
+          SIGN_RESULT: ${{ needs.sign-and-verify.result }}
+          APT_RESULT: ${{ needs.test-apt-install.result }}
+          FEDORA_RESULT: ${{ needs.test-fedora-install.result }}
+          IOS_RESULT: ${{ needs.apple-release-ios.result }}
+          MACOS_RESULT: ${{ needs.apple-release-macos.result }}
+          PUBLISH_RELEASE: ${{ github.event_name == 'push' || inputs.publish_release == true }}
+        run: |
+          if [[ "$VERSION_RESULT" != success || "$SIGN_RESULT" != success || "$APT_RESULT" != success || "$FEDORA_RESULT" != success ]]; then
+            echo "::error::Linux release validation must succeed before publishing."
+            exit 1
+          fi
+          if [[ "$PUBLISH_RELEASE" == true && ( "$IOS_RESULT" != success || "$MACOS_RESULT" != success ) ]]; then
+            echo "::error::Apple release builds must succeed before publishing. iOS: $IOS_RESULT; macOS: $MACOS_RESULT"
+            exit 1
+          fi
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
@@ -357,6 +801,63 @@ jobs:
         with:
           name: packages
           path: build/packages
+      - uses: actions/download-artifact@v4
+        if: (github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true)
+        with:
+          name: retro-tv-ios-ipa
+          path: build/packages
+      - uses: actions/download-artifact@v4
+        if: (github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true)
+        with:
+          pattern: retro-tv-macos-*
+          path: build/packages
+          merge-multiple: true
+      - name: Reject conflicting publish modes
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true && inputs.publish_pages_only == true
+        run: |
+          echo "::error::Choose either publish_release or publish_pages_only, not both."
+          exit 1
+      - name: Create version tag for manual publish
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true && github.ref_type != 'tag'
+        env:
+          RELEASE_TAG: v${{ needs.resolve-version.outputs.name }}
+        run: |
+          if ! existing_tag_refs="$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}")"; then
+            echo "::error::Could not query origin for tag $RELEASE_TAG; check GitHub connectivity and permissions."
+            exit 1
+          fi
+          existing_tag_sha="$(printf '%s\n' "$existing_tag_refs" | awk -v tag_ref="refs/tags/$RELEASE_TAG" '$2 == tag_ref "^{}" { peeled = $1 } $2 == tag_ref { direct = $1 } END { print peeled ? peeled : direct }')"
+          if [[ -n "$existing_tag_sha" ]]; then
+            if [[ "$existing_tag_sha" != "$GITHUB_SHA" ]]; then
+              echo "::error::Tag $RELEASE_TAG already points to $existing_tag_sha, not $GITHUB_SHA. Bump pubspec.yaml to a new release version before publishing these artifacts."
+              exit 1
+            fi
+            echo "[release] reusing $RELEASE_TAG at $GITHUB_SHA"
+          else
+            git tag "$RELEASE_TAG" "$GITHUB_SHA"
+            git push origin "refs/tags/$RELEASE_TAG"
+            echo "[release] created $RELEASE_TAG at $GITHUB_SHA"
+          fi
+      - name: Create GitHub Release with assets
+        if: (github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.resolve-version.outputs.name) }}
+          target_commitish: ${{ github.sha }}
+          name: Retro TV ${{ needs.resolve-version.outputs.full }}
+          body: >
+            Retro TV ${{ needs.resolve-version.outputs.full }}: Linux (amd64), signed iOS App Store IPA, and signed/notarized macOS (Apple Silicon and Intel).
+            The iOS IPA must be uploaded to App Store Connect and submitted for Apple review before it is available on the App Store.
+            Install instructions: https://mzainulabideendev.github.io/Retro-TV/
+          files: |
+            build/packages/*.deb
+            build/packages/*.rpm
+            build/packages/*.flatpak
+            build/packages/SHA256SUMS
+            build/packages/*.ipa
+            build/packages/*.zip
+          draft: false
+          prerelease: false
       - name: Assemble GitHub Pages site
         run: bash scripts/generate-ghpages.sh
       - name: Configure Pages
@@ -367,17 +868,3 @@ jobs:
           path: build/gh-pages
       - name: Publish Pages
         uses: actions/deploy-pages@v4
-      - name: Create GitHub Release with assets
-        uses: softprops/action-gh-release@v2
-        with:
-          name: Retro TV ${{ needs.resolve-version.outputs.full }}
-          body: >
-            Linux release ${{ needs.resolve-version.outputs.full }} (amd64).
-            Install instructions: https://mzainulabideendev.github.io/Retro-TV/
-          files: |
-            build/packages/*.deb
-            build/packages/*.rpm
-            build/packages/*.flatpak
-            build/packages/SHA256SUMS
-          draft: false
-          prerelease: false

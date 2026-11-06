@@ -31,7 +31,10 @@ cleanup() { rm -f /etc/yum.repos.d/retro-tv-test.repo; }
 trap cleanup EXIT
 
 echo "[1/6] resolve metadata"
-dnf makecache || { echo "test-dnf-install: dnf makecache FAILED" >&2; exit 1; }
+# DNF keeps repository-metadata key trust separate from RPM's package key DB.
+# Accept the configured gpgkey non-interactively while keeping both signature
+# checks enabled in the repository configuration above.
+dnf makecache -y || { echo "test-dnf-install: dnf makecache FAILED" >&2; exit 1; }
 # `dnf list` is part of core dnf; `repoquery` needs dnf-plugins-core which is
 # not present in the minimal CI image.
 dnf list --available retro-tv || { echo "test-dnf-install: package not found in repo" >&2; exit 1; }
@@ -41,16 +44,18 @@ dnf install -y retro-tv || { echo "test-dnf-install: dnf install FAILED" >&2; ex
 
 echo "[3/6] verify executable + desktop entry"
 test -x /usr/bin/retro_tv || { echo "test-dnf-install: /usr/bin/retro_tv missing" >&2; exit 1; }
-test -x /usr/lib/retro-tv/retro_tv || { echo "test-dnf-install: /usr/lib/retro-tv/retro_tv missing" >&2; exit 1; }
+RPM_LIBDIR="$(rpm --eval '%{_libdir}')"
+test -x "$RPM_LIBDIR/retro-tv/retro_tv" \
+    || { echo "test-dnf-install: $RPM_LIBDIR/retro-tv/retro_tv missing" >&2; exit 1; }
 test -f /usr/share/applications/com.retrotv.retro_tv.desktop \
     || { echo "test-dnf-install: desktop entry missing" >&2; exit 1; }
 
 echo "[4/6] verify installed files"
 rpm -V retro-tv || { echo "test-dnf-install: rpm -V reported problems" >&2; exit 1; }
 
-echo "[5/6] verify signature on installed package"
-rpm -qK retro-tv | grep -q "GPG signature OK" \
-    || { echo "test-dnf-install: rpm signature NOT OK" >&2; exit 1; }
+echo "[5/6] verify repository RPM signature"
+rpm --checksig --verbose "$DNF_DIR"/retro-tv-*.rpm \
+    || { echo "test-dnf-install: RPM package signature NOT OK" >&2; exit 1; }
 
 echo "[6/6] remove retro-tv"
 dnf remove -y retro-tv || { echo "test-dnf-install: dnf remove FAILED" >&2; exit 1; }
